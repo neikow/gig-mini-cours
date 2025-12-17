@@ -19,8 +19,175 @@ canvas {
     display: flex;
     justify-content: center;
     align-items: center;
+    width: 800px;
+    height: 500px;
 }
 body { margin: 0; overflow: hidden; }
+
+/* Canvas wrapper for side-by-side layout */
+.canvas-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+/* Points editor panel */
+.points-editor {
+    background: #2a2a2a;
+    border-radius: 4px;
+    padding: 12px;
+    min-width: 180px;
+    max-width: 220px;
+    max-height: 480px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 12px;
+    color: #ddd;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+}
+
+.points-editor h3 {
+    margin: 0 0 10px 0;
+    font-size: 13px;
+    color: #fff;
+    border-bottom: 1px solid #444;
+    padding-bottom: 6px;
+}
+
+.points-editor .point-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    margin-bottom: 6px;
+    background: #333;
+    border-radius: 4px;
+    border-left: 3px solid var(--point-color, #888);
+}
+
+.points-editor .point-item.fixed {
+    opacity: 0.6;
+    border-left-color: #666;
+}
+
+.points-editor .point-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.points-editor .point-label {
+    font-weight: bold;
+    color: #fff;
+}
+
+.points-editor .point-coords {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.points-editor .coord-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.points-editor .coord-group label {
+    color: #888;
+    min-width: 12px;
+}
+
+.points-editor .coord-group input {
+    width: 50px;
+    padding: 3px 5px;
+    border: 1px solid #555;
+    border-radius: 3px;
+    background: #222;
+    color: #fff;
+    font-family: monospace;
+    font-size: 11px;
+}
+
+.points-editor .coord-group input:disabled {
+    background: #1a1a1a;
+    color: #666;
+    cursor: not-allowed;
+}
+
+.points-editor .coord-group input:focus {
+    outline: none;
+    border-color: #666;
+}
+
+.points-editor .weight-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.points-editor .weight-group label {
+    color: #888;
+    min-width: 12px;
+}
+
+.points-editor .weight-group input[type="range"] {
+    width: 60px;
+    height: 4px;
+    cursor: pointer;
+    accent-color: var(--point-color, #38b6ff);
+}
+
+.points-editor .weight-group .weight-value {
+    min-width: 24px;
+    text-align: right;
+    color: #aaa;
+}
+
+.points-editor .btn-delete {
+    background: #5a2a2a;
+    border: none;
+    color: #ff6666;
+    font-size: 14px;
+    width: 20px;
+    height: 20px;
+    border-radius: 3px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.points-editor .btn-delete:hover {
+    background: #7a3a3a;
+}
+
+.points-editor .btn-delete:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.points-editor .btn-add {
+    width: 100%;
+    padding: 8px;
+    margin-top: 8px;
+    background: #3a3a3a;
+    border: 1px dashed #555;
+    color: #aaa;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: monospace;
+    font-size: 12px;
+    transition: background 0.2s, color 0.2s;
+}
+
+.points-editor .btn-add:hover {
+    background: #444;
+    color: #fff;
+}
 
 .slider-container {
     position: fixed;

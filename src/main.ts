@@ -27,8 +27,10 @@ function initInteractive2DCanvas(
     id: string,
     idSliderT: string,
     idToggleConstruction: string | null,
+    idPointsEditor: string | null,
     color: string,
     initialPoints: Point[],
+    showWeights: boolean,
     drawCurve: (ctx: CanvasRenderingContext2D, p: Point[], maxT: number) => void,
     drawExtras?: (ctx: CanvasRenderingContext2D, p: Point[], maxT: number) => void
 ) {
@@ -69,6 +71,7 @@ function initInteractive2DCanvas(
             points[draggedIdx].x = pos.x;
             points[draggedIdx].y = pos.y;
             render();
+            updatePointsEditor();
         }
     });
 
@@ -89,6 +92,146 @@ function initInteractive2DCanvas(
                 render();
             });
         }
+    }
+
+    // Points Editor
+    const pointsEditorContainer = idPointsEditor ? document.getElementById(idPointsEditor) : null;
+
+    function updatePointsEditor() {
+        if (!pointsEditorContainer) return;
+
+        pointsEditorContainer.innerHTML = '';
+        pointsEditorContainer.style.setProperty('--point-color', color);
+
+        const header = document.createElement('h3');
+        header.textContent = 'Control Points';
+        pointsEditorContainer.appendChild(header);
+
+        points.forEach((point, index) => {
+            const item = document.createElement('div');
+            item.className = 'point-item' + (point.fixed ? ' fixed' : '');
+            item.style.setProperty('--point-color', point.fixed ? '#666' : color);
+
+            // Header with label and delete button
+            const headerDiv = document.createElement('div');
+            headerDiv.className = 'point-header';
+
+            const label = document.createElement('span');
+            label.className = 'point-label';
+            label.textContent = `P${index}`;
+            headerDiv.appendChild(label);
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn-delete';
+            deleteBtn.innerHTML = '×';
+            deleteBtn.disabled = point.fixed || points.length <= 2;
+            deleteBtn.addEventListener('click', () => {
+                if (!point.fixed && points.length > 2) {
+                    points.splice(index, 1);
+                    render();
+                    updatePointsEditor();
+                }
+            });
+            headerDiv.appendChild(deleteBtn);
+            item.appendChild(headerDiv);
+
+            // Coordinates
+            const coordsDiv = document.createElement('div');
+            coordsDiv.className = 'point-coords';
+
+            // X coordinate
+            const xGroup = document.createElement('div');
+            xGroup.className = 'coord-group';
+            const xLabel = document.createElement('label');
+            xLabel.textContent = 'x:';
+            const xInput = document.createElement('input');
+            xInput.type = 'number';
+            xInput.value = Math.round(point.x).toString();
+            xInput.disabled = !!point.fixed;
+            xInput.addEventListener('change', (e) => {
+                point.x = parseFloat((e.target as HTMLInputElement).value) || 0;
+                render();
+            });
+            xGroup.appendChild(xLabel);
+            xGroup.appendChild(xInput);
+            coordsDiv.appendChild(xGroup);
+
+            // Y coordinate
+            const yGroup = document.createElement('div');
+            yGroup.className = 'coord-group';
+            const yLabel = document.createElement('label');
+            yLabel.textContent = 'y:';
+            const yInput = document.createElement('input');
+            yInput.type = 'number';
+            yInput.value = Math.round(point.y).toString();
+            yInput.disabled = !!point.fixed;
+            yInput.addEventListener('change', (e) => {
+                point.y = parseFloat((e.target as HTMLInputElement).value) || 0;
+                render();
+            });
+            yGroup.appendChild(yLabel);
+            yGroup.appendChild(yInput);
+            coordsDiv.appendChild(yGroup);
+
+            item.appendChild(coordsDiv);
+
+            // Weight (if applicable)
+            if (showWeights && point.w !== undefined) {
+                const weightGroup = document.createElement('div');
+                weightGroup.className = 'weight-group';
+
+                const wLabel = document.createElement('label');
+                wLabel.textContent = 'w:';
+                weightGroup.appendChild(wLabel);
+
+                const wRange = document.createElement('input');
+                wRange.type = 'range';
+                wRange.min = '0.1';
+                wRange.max = '10';
+                wRange.step = '0.1';
+                wRange.value = point.w.toString();
+                wRange.disabled = !!point.fixed;
+
+                const wValue = document.createElement('span');
+                wValue.className = 'weight-value';
+                wValue.textContent = point.w.toFixed(1);
+
+                wRange.addEventListener('input', (e) => {
+                    const newW = parseFloat((e.target as HTMLInputElement).value);
+                    point.w = newW;
+                    wValue.textContent = newW.toFixed(1);
+                    render();
+                });
+
+                weightGroup.appendChild(wRange);
+                weightGroup.appendChild(wValue);
+                item.appendChild(weightGroup);
+            }
+
+            pointsEditorContainer.appendChild(item);
+        });
+
+        // Add point button
+        const addBtn = document.createElement('button');
+        addBtn.className = 'btn-add';
+        addBtn.textContent = '+ Add Point';
+        addBtn.addEventListener('click', () => {
+            // Insert point in the middle
+            const midIdx = Math.floor(points.length / 2);
+            const p1 = points[midIdx - 1] || points[0];
+            const p2 = points[midIdx] || points[points.length - 1];
+            const newPoint: Point = {
+                x: (p1.x + p2.x) / 2,
+                y: (p1.y + p2.y) / 2
+            };
+            if (showWeights) {
+                newPoint.w = 1;
+            }
+            points.splice(midIdx, 0, newPoint);
+            render();
+            updatePointsEditor();
+        });
+        pointsEditorContainer.appendChild(addBtn);
     }
 
     function render() {
@@ -133,14 +276,17 @@ function initInteractive2DCanvas(
             }
             ctx.fill();
         });
+
+        // Update points editor display
+        updatePointsEditor();
     }
     render();
 }
 
 // 1. Bezier Curve
-initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '#ff3b3b', [
+initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', 'bezierPoints', '#ff3b3b', [
         {x: 100, y: 400}, {x: 200, y: 100}, {x: 600, y: 100}, {x: 700, y: 400}
-    ], (ctx, p, maxT) => {
+    ], false, (ctx, p, maxT) => {
         ctx.moveTo(p[0].x, p[0].y);
         for (let t = 0; t <= maxT; t += 0.01) {
             const x = Math.pow(1-t,3)*p[0].x + 3*Math.pow(1-t,2)*t*p[1].x + 3*(1-t)*t*t*p[2].x + t*t*t*p[3].x;
@@ -382,7 +528,7 @@ initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '
 })();
 
 // 3. B-Splines (Quadratic)
-initInteractive2DCanvas('bsplineCanvas', 'bsplineCanvasT', null, '#38ffaf', [
+initInteractive2DCanvas('bsplineCanvas', 'bsplineCanvasT', 'bsplineConstruction', 'bsplinePoints', '#38ffaf', [
   {x: 100, y: 300, fixed: true}, // P0 (dummy start point)
   {x: 100, y: 300, fixed: true}, // P0
   {x: 250, y: 100}, // P1
@@ -390,7 +536,7 @@ initInteractive2DCanvas('bsplineCanvas', 'bsplineCanvasT', null, '#38ffaf', [
   {x: 550, y: 100}, // P3
   {x: 700, y: 300, fixed: true}, // P4
   {x: 700, y: 300, fixed: true}, // P4 (dummy end point)
-], (ctx, p, maxT) => {
+], false, (ctx, p, maxT) => {
     const numSegments = p.length - 2;
     const totalT = maxT * numSegments;
 
@@ -529,7 +675,7 @@ const nurbsPts = [
   {x: 500, y: 80, w: 3},
   {x: 650, y: 400, w: 1}
 ];
-initInteractive2DCanvas('nurbsCanvas', 'nurbsCanvasT', null, '#38b6ff', nurbsPts, (ctx, p, maxT) => {
+initInteractive2DCanvas('nurbsCanvas', 'nurbsCanvasT', null, 'nurbsPoints', '#38b6ff', nurbsPts, true, (ctx, p, maxT) => {
   const n = p.length - 1; // Degree of the curve
 
   // Precompute binomial coefficients

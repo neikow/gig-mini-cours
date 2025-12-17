@@ -11,7 +11,10 @@
         <div class="slides">
           <section>
             <h1>Courbe de bézier</h1>
-            <canvas id="bezierCanvas"></canvas>
+            <div class="canvas-wrapper">
+              <canvas id="bezierCanvas"></canvas>
+              <div id="bezierPoints" class="points-editor"></div>
+            </div>
             <div class="slider-container">
               <label for='bezierCanvasT'>t</label>
               <input
@@ -31,8 +34,10 @@
 
           <section>
             <h1>Surface de bézier</h1>
-            <!-- 3D surface renderer (Three.js) -->
-            <div id="surface3d"></div>
+            <div class="canvas-wrapper">
+              <div id="surface3d"></div>
+              <div id="surfacePoints" class="points-editor"></div>
+            </div>
             <div class="slider-container">
               <label for='surfaceCanvasT'>t</label>
               <input
@@ -56,8 +61,10 @@
 
           <section>
             <h1>BSpline</h1>
-
-            <canvas id="bsplineCanvas"></canvas>
+            <div class="canvas-wrapper">
+              <canvas id="bsplineCanvas"></canvas>
+              <div id="bsplinePoints" class="points-editor"></div>
+            </div>
             <div class="slider-container">
               <label for='bsplineCanvasT'>t</label>
               <input
@@ -77,8 +84,10 @@
 
           <section>
             <h1>NURBs</h1>
-
-            <canvas id="nurbsCanvas"></canvas>
+            <div class="canvas-wrapper">
+              <canvas id="nurbsCanvas"></canvas>
+              <div id="nurbsPoints" class="points-editor"></div>
+            </div>
             <div class="slider-container">
               <label for='nurbsCanvasT'>t</label>
               <input
@@ -97,4 +106,3 @@
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
-
