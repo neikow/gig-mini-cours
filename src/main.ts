@@ -124,7 +124,13 @@ function initInteractive2DCanvas(
               ctx.fillStyle = color;
             }
             ctx.beginPath();
-            ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+            if (p.w !== undefined) {
+                // Draw weight indicator for NURBS points
+                const r = 4 + Math.min(Math.max(p.w, 1), 5); // weight affects size
+                ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+            } else {
+              ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+            }
             ctx.fill();
         });
     }
@@ -499,17 +505,62 @@ initInteractive2DCanvas('bsplineCanvas', 'bsplineCanvasT', null, '#38ffaf', [
   ctx.restore();
 });
 
+function getFactorialCached(): (n: number) => number {
+  const cache: {[key: number]: number} = {};
+  return function factorial(n: number): number {
+      if (n in cache) return cache[n];
+      if (n <= 1) return 1;
+      const result = n * factorial(n - 1);
+      cache[n] = result;
+      return result;
+  }
+}
+
+const factorial = getFactorialCached();
+
+function binomialCoefficient(n: number, k: number): number {
+  return factorial(n) / (factorial(k) * factorial(n - k));
+}
+
 // 4. NURBS (Rational Bezier Example)
-const nurbsPts = [{x: 150, y: 400, w: 1}, {x: 400, y: 50, w: 5}, {x: 650, y: 400, w: 1}];
+const nurbsPts = [
+  {x: 150, y: 400, w: 1},
+  {x: 300, y: 50, w: 8},
+  {x: 500, y: 80, w: 3},
+  {x: 650, y: 400, w: 1}
+];
 initInteractive2DCanvas('nurbsCanvas', 'nurbsCanvasT', null, '#38b6ff', nurbsPts, (ctx, p, maxT) => {
-    ctx.moveTo(p[0].x, p[0].y);
-    for (let t = 0; t <= maxT; t += 0.01) {
-        const w0 = Math.pow(1-t, 2) * (p[0].w || 1);
-        const w1 = 2 * (1-t) * t * (p[1].w || 1);
-        const w2 = t * t * (p[2].w || 1);
-        const wSum = w0 + w1 + w2;
-        const x = (w0*p[0].x + w1*p[1].x + w2*p[2].x) / wSum;
-        const y = (w0*p[0].y + w1*p[1].y + w2*p[2].y) / wSum;
-        ctx.lineTo(x, y);
+  const n = p.length - 1; // Degree of the curve
+
+  // Precompute binomial coefficients
+  const C: number[] = [];
+  for (let i = 0; i <= n; i++) {
+    C[i] = binomialCoefficient(n, i);
+  }
+
+  ctx.moveTo(p[0].x, p[0].y);
+
+  // Helper to calculate point at parameter t
+  const getRationalBezierPoint = (t: number) => {
+    let sumX = 0, sumY = 0, sumW = 0;
+    for (let i = 0; i <= n; i++) {
+      // Bernstein basis: B(i,n) = C(n,i) * (1-t)^(n-i) * t^i
+      const basis = C[i] * Math.pow(1 - t, n - i) * Math.pow(t, i);
+      const w = p[i].w !== undefined ? p[i].w : 1;
+
+      sumX += basis * (w ?? 1) * p[i].x;
+      sumY += basis * (w ?? 1) * p[i].y;
+      sumW += basis * (w ?? 1);
     }
+    return { x: sumX / sumW, y: sumY / sumW };
+  };
+
+  for (let t = 0; t <= maxT; t += 0.01) {
+    const pt = getRationalBezierPoint(t);
+    ctx.lineTo(pt.x, pt.y);
+  }
+
+  // Ensure the curve ends exactly at maxT
+  const endPt = getRationalBezierPoint(maxT);
+  ctx.lineTo(endPt.x, endPt.y);
 });

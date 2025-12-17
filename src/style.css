@@ -27,11 +27,12 @@ body { margin: 0; overflow: hidden; }
     display: flex;
     gap: 12px;
     align-items: center;
-    bottom: 30px;
+    bottom: 0px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 999;
-    width: 320px;
+    width: 30%;
+    font-family: monospace;
 }
 input[type=range] {
     width: 100%;
