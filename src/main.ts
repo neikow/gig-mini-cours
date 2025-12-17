@@ -20,6 +20,7 @@ interface Point {
     x: number;
     y: number;
     w?: number;
+    fixed?: boolean;
 }
 
 function initInteractive2DCanvas(
@@ -63,6 +64,7 @@ function initInteractive2DCanvas(
 
     window.addEventListener('mousemove', e => {
         if (draggedIdx !== -1) {
+            if (points[draggedIdx].fixed) return;
             const pos = getMousePos(e);
             points[draggedIdx].x = pos.x;
             points[draggedIdx].y = pos.y;
@@ -116,7 +118,11 @@ function initInteractive2DCanvas(
 
         // Draw Handles
         points.forEach(p => {
-            ctx.fillStyle = color;
+            if (p.fixed) {
+                ctx.fillStyle = '#888';
+            } else {
+              ctx.fillStyle = color;
+            }
             ctx.beginPath();
             ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
             ctx.fill();
@@ -371,7 +377,13 @@ initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '
 
 // 3. B-Splines (Quadratic)
 initInteractive2DCanvas('bsplineCanvas', 'bsplineCanvasT', null, '#38ffaf', [
-    {x: 100, y: 300}, {x: 250, y: 100}, {x: 400, y: 300}, {x: 550, y: 100}, {x: 700, y: 300}
+  {x: 100, y: 300, fixed: true}, // P0 (dummy start point)
+  {x: 100, y: 300, fixed: true}, // P0
+  {x: 250, y: 100}, // P1
+  {x: 400, y: 300}, // P2
+  {x: 550, y: 100}, // P3
+  {x: 700, y: 300, fixed: true}, // P4
+  {x: 700, y: 300, fixed: true}, // P4 (dummy end point)
 ], (ctx, p, maxT) => {
     const numSegments = p.length - 2;
     const totalT = maxT * numSegments;
