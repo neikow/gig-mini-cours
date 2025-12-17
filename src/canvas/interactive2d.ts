@@ -59,7 +59,7 @@ export function initInteractive2DCanvas(config: Interactive2DCanvasConfig): void
 
     let points = initialPoints;
     let draggedIdx = -1;
-    let maxT = 1;
+    let maxT = 0.5;
 
     function getMousePos(e: MouseEvent) {
         const rect = canvas.getBoundingClientRect();
