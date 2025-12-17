@@ -395,8 +395,8 @@ initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '
 (function(){
     // Control point grid (rows x cols) - can be any size >= 2x2
     // Each point has x, y (horizontal plane) and z (height)
-    const gridRows = 4;
-    const gridCols = 4;
+    let gridRows = 4;
+    let gridCols = 4;
 
     // Generate initial control points in a grid pattern with some height variation
     function generateInitialGrid(rows: number, cols: number): THREE.Vector3[][] {
@@ -467,13 +467,181 @@ initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '
         let controlNetEnabled = true;
         let constructionEnabled = true;
 
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111111);
+        const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 2000);
+        camera.position.set(300, 300, 400);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(width, height);
+        container.appendChild(renderer.domElement);
+
+        const orbitControls = new OrbitControls(camera, renderer.domElement);
+        orbitControls.enableDamping = true;
+        orbitControls.target.set(0, 0, 0);
+
+        // Lights
+        const hemi = new THREE.HemisphereLight(0xffffff, 0x222222, 0.8);
+        scene.add(hemi);
+        const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+        dir.position.set(200, 500, 200);
+        scene.add(dir);
+
+        // Control point grid
+        let controlGrid = generateInitialGrid(gridRows, gridCols);
+
+        // Control net visualization group
+        const controlGroup = new THREE.Group();
+        scene.add(controlGroup);
+
+        const matPoint = new THREE.MeshStandardMaterial({ color: 0xffde38 });
+        const matPointHover = new THREE.MeshStandardMaterial({ color: 0xffff88 });
+        const sphGeom = new THREE.SphereGeometry(8, 12, 12);
+
+        // Create control point spheres and track them for dragging
+        let controlSpheres: THREE.Mesh[] = [];
+        let sphereToGridIndex = new Map<THREE.Mesh, { row: number; col: number }>();
+        let dragControls: DragControls | null = null;
+
+        function rebuildControlPoints() {
+            // Remove old spheres from scene and control group
+            controlSpheres.forEach(s => {
+                controlGroup.remove(s);
+                s.geometry.dispose();
+            });
+            controlSpheres = [];
+            sphereToGridIndex.clear();
+
+            // Dispose old drag controls
+            if (dragControls) {
+                dragControls.dispose();
+            }
+
+            // Create new spheres
+            for (let i = 0; i < gridRows; i++) {
+                for (let j = 0; j < gridCols; j++) {
+                    const m = new THREE.Mesh(sphGeom, matPoint.clone());
+                    m.position.copy(controlGrid[i][j]);
+                    controlGroup.add(m);
+                    controlSpheres.push(m);
+                    sphereToGridIndex.set(m, { row: i, col: j });
+                }
+            }
+
+            // Create new drag controls
+            dragControls = new DragControls(controlSpheres, camera, renderer.domElement);
+
+            dragControls.addEventListener('dragstart', (event) => {
+                orbitControls.enabled = false;
+                const mesh = event.object as THREE.Mesh;
+                mesh.material = matPointHover.clone();
+            });
+
+            dragControls.addEventListener('drag', (event) => {
+                const mesh = event.object as THREE.Mesh;
+                const gridIdx = sphereToGridIndex.get(mesh);
+                if (gridIdx) {
+                    controlGrid[gridIdx.row][gridIdx.col].copy(mesh.position);
+                    updateControlNet();
+                    rebuildSurface();
+                    updateIsoCurves(currentU, currentV);
+                    updateConstruction(currentU, currentV);
+                }
+            });
+
+            dragControls.addEventListener('dragend', (event) => {
+                orbitControls.enabled = true;
+                const mesh = event.object as THREE.Mesh;
+                mesh.material = matPoint.clone();
+            });
+
+            dragControls.addEventListener('hoveron', (event) => {
+                const mesh = event.object as THREE.Mesh;
+                mesh.material = matPointHover.clone();
+                renderer.domElement.style.cursor = 'grab';
+            });
+
+            dragControls.addEventListener('hoveroff', (event) => {
+                const mesh = event.object as THREE.Mesh;
+                mesh.material = matPoint.clone();
+                renderer.domElement.style.cursor = 'auto';
+            });
+        }
+
+        // Function to regenerate everything when grid size changes
+        function regenerateGrid(newRows: number, newCols: number) {
+            gridRows = Math.max(2, Math.min(8, newRows));
+            gridCols = Math.max(2, Math.min(8, newCols));
+            controlGrid = generateInitialGrid(gridRows, gridCols);
+            rebuildControlPoints();
+            updateControlNet();
+            rebuildSurface();
+            updateIsoCurves(currentU, currentV);
+            updateConstruction(currentU, currentV);
+            createControlsWidget(); // Refresh the widget to show new values
+        }
+
         function createControlsWidget() {
             if (!controlsContainer) return;
             controlsContainer.innerHTML = '';
 
             const header = document.createElement('h3');
-            header.textContent = 'Surface Controls';
+            header.textContent = 'Contrôles';
             controlsContainer.appendChild(header);
+
+            // Grid size section
+            const gridSection = document.createElement('div');
+            gridSection.className = 'control-section';
+
+            const gridLabel = document.createElement('div');
+            gridLabel.className = 'section-label';
+            gridLabel.textContent = 'Taille de la grille';
+            gridSection.appendChild(gridLabel);
+
+            // Rows control
+            const rowsItem = document.createElement('div');
+            rowsItem.className = 'grid-size-control';
+            const rowsLabel = document.createElement('label');
+            rowsLabel.textContent = 'Lignes:';
+            const rowsInput = document.createElement('input');
+            rowsInput.type = 'number';
+            rowsInput.min = '2';
+            rowsInput.max = '8';
+            rowsInput.value = gridRows.toString();
+            rowsInput.addEventListener('change', (e) => {
+                const newRows = parseInt((e.target as HTMLInputElement).value) || 2;
+                regenerateGrid(newRows, gridCols);
+            });
+            rowsItem.appendChild(rowsLabel);
+            rowsItem.appendChild(rowsInput);
+            gridSection.appendChild(rowsItem);
+
+            // Cols control
+            const colsItem = document.createElement('div');
+            colsItem.className = 'grid-size-control';
+            const colsLabel = document.createElement('label');
+            colsLabel.textContent = 'Colonnes:';
+            const colsInput = document.createElement('input');
+            colsInput.type = 'number';
+            colsInput.min = '2';
+            colsInput.max = '8';
+            colsInput.value = gridCols.toString();
+            colsInput.addEventListener('change', (e) => {
+                const newCols = parseInt((e.target as HTMLInputElement).value) || 2;
+                regenerateGrid(gridRows, newCols);
+            });
+            colsItem.appendChild(colsLabel);
+            colsItem.appendChild(colsInput);
+            gridSection.appendChild(colsItem);
+
+            // Degree info
+            const degreeInfo = document.createElement('div');
+            degreeInfo.className = 'info-item';
+            degreeInfo.textContent = `Degré: ${gridRows - 1} × ${gridCols - 1}`;
+            gridSection.appendChild(degreeInfo);
+
+            controlsContainer.appendChild(gridSection);
 
             // Display options section
             const displaySection = document.createElement('div');
@@ -481,7 +649,7 @@ initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '
 
             const displayLabel = document.createElement('div');
             displayLabel.className = 'section-label';
-            displayLabel.textContent = 'Display';
+            displayLabel.textContent = 'Affichage';
             displaySection.appendChild(displayLabel);
 
             // Wireframe toggle
@@ -513,7 +681,7 @@ initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '
                 controlGroup.visible = controlNetEnabled;
             });
             controlNetItem.appendChild(controlNetCheck);
-            controlNetItem.appendChild(document.createTextNode(' Control Net'));
+            controlNetItem.appendChild(document.createTextNode(' Points de contrôle'));
             displaySection.appendChild(controlNetItem);
 
             // Construction toggle
@@ -539,7 +707,7 @@ initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '
 
             const paramsLabel = document.createElement('div');
             paramsLabel.className = 'section-label';
-            paramsLabel.textContent = 'Parameters';
+            paramsLabel.textContent = 'Paramètres';
             paramsSection.appendChild(paramsLabel);
 
             // U value display
@@ -555,27 +723,6 @@ initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '
             paramsSection.appendChild(vItem);
 
             controlsContainer.appendChild(paramsSection);
-
-            // Grid info section
-            const infoSection = document.createElement('div');
-            infoSection.className = 'control-section';
-
-            const infoLabel = document.createElement('div');
-            infoLabel.className = 'section-label';
-            infoLabel.textContent = 'Grid Info';
-            infoSection.appendChild(infoLabel);
-
-            const gridInfo = document.createElement('div');
-            gridInfo.className = 'info-item';
-            gridInfo.textContent = `${gridRows} × ${gridCols} control points`;
-            infoSection.appendChild(gridInfo);
-
-            const degreeInfo = document.createElement('div');
-            degreeInfo.className = 'info-item';
-            degreeInfo.textContent = `Degree: ${gridRows - 1} × ${gridCols - 1}`;
-            infoSection.appendChild(degreeInfo);
-
-            controlsContainer.appendChild(infoSection);
         }
 
         function updateParamDisplay() {
@@ -585,90 +732,8 @@ initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '
             if (vDisplay) vDisplay.textContent = currentV.toFixed(2);
         }
 
-        // Scene setup
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x111111);
-        const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 2000);
-        camera.position.set(300, 300, 400);
-
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(width, height);
-        container.appendChild(renderer.domElement);
-
-        const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.target.set(0, 0, 0);
-
-        // Lights
-        const hemi = new THREE.HemisphereLight(0xffffff, 0x222222, 0.8);
-        scene.add(hemi);
-        const dir = new THREE.DirectionalLight(0xffffff, 0.6);
-        dir.position.set(200, 500, 200);
-        scene.add(dir);
-
-        // Control point grid
-        const controlGrid = generateInitialGrid(gridRows, gridCols);
-
-        // Control net visualization group
-        const controlGroup = new THREE.Group();
-        const matPoint = new THREE.MeshStandardMaterial({ color: 0xffde38 });
-        const matPointHover = new THREE.MeshStandardMaterial({ color: 0xffff88 });
-        const sphGeom = new THREE.SphereGeometry(8, 12, 12);
-
-        // Create control point spheres and track them for dragging
-        const controlSpheres: THREE.Mesh[] = [];
-        const sphereToGridIndex = new Map<THREE.Mesh, { row: number; col: number }>();
-
-        for (let i = 0; i < gridRows; i++) {
-            for (let j = 0; j < gridCols; j++) {
-                const m = new THREE.Mesh(sphGeom, matPoint.clone());
-                m.position.copy(controlGrid[i][j]);
-                controlGroup.add(m);
-                controlSpheres.push(m);
-                sphereToGridIndex.set(m, { row: i, col: j });
-            }
-        }
-
-        // Add drag controls for control points
-        const dragControls = new DragControls(controlSpheres, camera, renderer.domElement);
-
-        dragControls.addEventListener('dragstart', (event) => {
-            controls.enabled = false; // Disable orbit controls while dragging
-            const mesh = event.object as THREE.Mesh;
-            mesh.material = matPointHover.clone();
-        });
-
-        dragControls.addEventListener('drag', (event) => {
-            const mesh = event.object as THREE.Mesh;
-            const gridIdx = sphereToGridIndex.get(mesh);
-            if (gridIdx) {
-                // Update the control grid position
-                controlGrid[gridIdx.row][gridIdx.col].copy(mesh.position);
-                // Update visualization
-                updateControlNet();
-                rebuildSurface();
-                updateIsoCurves(currentU, currentV);
-                updateConstruction(currentU, currentV);
-            }
-        });
-
-        dragControls.addEventListener('dragend', (event) => {
-            controls.enabled = true; // Re-enable orbit controls
-            const mesh = event.object as THREE.Mesh;
-            mesh.material = matPoint.clone();
-        });
-
-        dragControls.addEventListener('hoveron', (event) => {
-            const mesh = event.object as THREE.Mesh;
-            mesh.material = matPointHover.clone();
-            renderer.domElement.style.cursor = 'grab';
-        });
-
-        dragControls.addEventListener('hoveroff', (event) => {
-            const mesh = event.object as THREE.Mesh;
-            mesh.material = matPoint.clone();
-            renderer.domElement.style.cursor = 'auto';
-        });
+        // Initialize control points
+        rebuildControlPoints();
 
         // Create control net lines
         const netMat = new THREE.LineBasicMaterial({ color: 0x888888 });
@@ -916,7 +981,7 @@ initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '
         // Animation loop
         function animate() {
             requestAnimationFrame(animate);
-            controls.update();
+            orbitControls.update();
             renderer.render(scene, camera);
         }
         animate();
