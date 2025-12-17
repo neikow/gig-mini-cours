@@ -33,29 +33,30 @@
           </section>
 
           <section>
-            <h1>Surface de bézier</h1>
+            <h1>Surface de Bézier</h1>
             <div class="canvas-wrapper">
               <div id="surface3d"></div>
-              <div id="surfacePoints" class="points-editor"></div>
+              <div id="surfaceControls" class="points-editor"></div>
             </div>
             <div class="slider-container">
-              <label for='surfaceCanvasT'>t</label>
+              <label for='surfaceCanvasU'>u</label>
               <input
                 type="range"
-                id="surfaceCanvasT"
+                id="surfaceCanvasU"
                 min="0"
                 max="1"
                 step="0.01"
                 value="0.5"
               />
-              <label class="checkbox-inline">
-                <input type="checkbox" id="surfaceWireframe" />
-                Wireframe
-              </label>
-              <label class="checkbox-inline">
-                <input type="checkbox" id="surfaceControlNet" checked />
-                Control net
-              </label>
+              <label for='surfaceCanvasV'>v</label>
+              <input
+                type="range"
+                id="surfaceCanvasV"
+                min="0"
+                max="1"
+                step="0.01"
+                value="0.5"
+              />
             </div>
           </section>
 

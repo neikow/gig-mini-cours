@@ -198,6 +198,69 @@ body { margin: 0; overflow: hidden; }
     color: #fff;
 }
 
+/* Control sections for surface widget */
+.points-editor .control-section {
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #444;
+}
+
+.points-editor .control-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.points-editor .section-label {
+    font-size: 11px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.points-editor .control-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    cursor: pointer;
+    color: #ccc;
+    font-size: 12px;
+}
+
+.points-editor .control-item:hover {
+    color: #fff;
+}
+
+.points-editor .control-item input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+}
+
+.points-editor .param-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 12px;
+}
+
+.points-editor .param-label {
+    color: #888;
+}
+
+.points-editor .param-value {
+    color: #fff;
+    font-weight: bold;
+}
+
+.points-editor .info-item {
+    color: #888;
+    font-size: 11px;
+    padding: 2px 0;
+}
+
 .slider-container {
     position: fixed;
     display: flex;

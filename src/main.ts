@@ -4,10 +4,11 @@ import './style.css';
 import Reveal from 'reveal.js';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { DragControls } from 'three/examples/jsm/controls/DragControls.js';
 
 Reveal.initialize({
     hash: true,
-    controls: false,
+    controls: true,
     progress: true,
     center: true,
     transition: 'fade'
@@ -390,94 +391,337 @@ initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '
     });
 
 // 2. Bezier Surface (3D visualization using Three.js)
+// Generalized NxM control point grid with proper Bezier tensor product surface
 (function(){
-    // initial control points (2D coordinates mapped into 3D plane)
-    const ctrl = [
-        {x: 300, y: 150}, {x: 500, y: 150}, {x: 250, y: 350}, {x: 550, y: 350}
-    ];
+    // Control point grid (rows x cols) - can be any size >= 2x2
+    // Each point has x, y (horizontal plane) and z (height)
+    const gridRows = 4;
+    const gridCols = 4;
 
-    function initBezierSurface3D(containerId: string, sliderId: string, wireframeId: string, controlNetId: string, controlPoints: Point[]) {
+    // Generate initial control points in a grid pattern with some height variation
+    function generateInitialGrid(rows: number, cols: number): THREE.Vector3[][] {
+        const grid: THREE.Vector3[][] = [];
+        const spacing = 100;
+        const offsetX = -(cols - 1) * spacing / 2;
+        const offsetY = -(rows - 1) * spacing / 2;
+
+        for (let i = 0; i < rows; i++) {
+            const row: THREE.Vector3[] = [];
+            for (let j = 0; j < cols; j++) {
+                const x = offsetX + j * spacing;
+                const y = offsetY + i * spacing;
+                // Create interesting height variation
+                const z = 50 * Math.sin((i / (rows - 1)) * Math.PI) * Math.sin((j / (cols - 1)) * Math.PI);
+                row.push(new THREE.Vector3(x, z, y)); // y is up in Three.js
+            }
+            grid.push(row);
+        }
+        return grid;
+    }
+
+    // De Casteljau for 1D array of Vector3
+    function deCasteljau3D(points: THREE.Vector3[], t: number): THREE.Vector3 {
+        if (points.length === 1) return points[0].clone();
+        const newPoints: THREE.Vector3[] = [];
+        for (let i = 0; i < points.length - 1; i++) {
+            newPoints.push(new THREE.Vector3().lerpVectors(points[i], points[i + 1], t));
+        }
+        return deCasteljau3D(newPoints, t);
+    }
+
+    // Get all intermediate levels for construction visualization
+    function deCasteljauLevels3D(points: THREE.Vector3[], t: number): THREE.Vector3[][] {
+        const levels: THREE.Vector3[][] = [points.map(p => p.clone())];
+        let current = points;
+        while (current.length > 1) {
+            const next: THREE.Vector3[] = [];
+            for (let i = 0; i < current.length - 1; i++) {
+                next.push(new THREE.Vector3().lerpVectors(current[i], current[i + 1], t));
+            }
+            levels.push(next);
+            current = next;
+        }
+        return levels;
+    }
+
+    // Evaluate Bezier surface at (u, v) using tensor product
+    function evaluateSurface(grid: THREE.Vector3[][], u: number, v: number): THREE.Vector3 {
+        // First, evaluate along each row at parameter u
+        const columnPoints: THREE.Vector3[] = [];
+        for (let i = 0; i < grid.length; i++) {
+            columnPoints.push(deCasteljau3D(grid[i], u));
+        }
+        // Then evaluate along the resulting column at parameter v
+        return deCasteljau3D(columnPoints, v);
+    }
+
+    function initBezierSurface3D(containerId: string, sliderId: string, sliderVId: string, controlsId: string) {
         const container = document.getElementById(containerId);
         if (!container) return;
-        const width = container.clientWidth || 800;
-        const height = container.clientHeight || 500;
+        const width = 800;
+        const height = 500;
 
-        // scene, camera, renderer
+        // Create controls widget
+        const controlsContainer = document.getElementById(controlsId);
+        let wireframeEnabled = false;
+        let controlNetEnabled = true;
+        let constructionEnabled = true;
+
+        function createControlsWidget() {
+            if (!controlsContainer) return;
+            controlsContainer.innerHTML = '';
+
+            const header = document.createElement('h3');
+            header.textContent = 'Surface Controls';
+            controlsContainer.appendChild(header);
+
+            // Display options section
+            const displaySection = document.createElement('div');
+            displaySection.className = 'control-section';
+
+            const displayLabel = document.createElement('div');
+            displayLabel.className = 'section-label';
+            displayLabel.textContent = 'Display';
+            displaySection.appendChild(displayLabel);
+
+            // Wireframe toggle
+            const wireframeItem = document.createElement('label');
+            wireframeItem.className = 'control-item';
+            const wireframeCheck = document.createElement('input');
+            wireframeCheck.type = 'checkbox';
+            wireframeCheck.id = 'surfaceWireframe';
+            wireframeCheck.checked = wireframeEnabled;
+            wireframeCheck.addEventListener('change', (e) => {
+                wireframeEnabled = (e.target as HTMLInputElement).checked;
+                if (surfaceMesh) {
+                    (surfaceMesh.material as THREE.MeshStandardMaterial).wireframe = wireframeEnabled;
+                }
+            });
+            wireframeItem.appendChild(wireframeCheck);
+            wireframeItem.appendChild(document.createTextNode(' Wireframe'));
+            displaySection.appendChild(wireframeItem);
+
+            // Control net toggle
+            const controlNetItem = document.createElement('label');
+            controlNetItem.className = 'control-item';
+            const controlNetCheck = document.createElement('input');
+            controlNetCheck.type = 'checkbox';
+            controlNetCheck.id = 'surfaceControlNet';
+            controlNetCheck.checked = controlNetEnabled;
+            controlNetCheck.addEventListener('change', (e) => {
+                controlNetEnabled = (e.target as HTMLInputElement).checked;
+                controlGroup.visible = controlNetEnabled;
+            });
+            controlNetItem.appendChild(controlNetCheck);
+            controlNetItem.appendChild(document.createTextNode(' Control Net'));
+            displaySection.appendChild(controlNetItem);
+
+            // Construction toggle
+            const constructionItem = document.createElement('label');
+            constructionItem.className = 'control-item';
+            const constructionCheck = document.createElement('input');
+            constructionCheck.type = 'checkbox';
+            constructionCheck.id = 'surfaceConstruction';
+            constructionCheck.checked = constructionEnabled;
+            constructionCheck.addEventListener('change', (e) => {
+                constructionEnabled = (e.target as HTMLInputElement).checked;
+                updateConstruction(currentU, currentV);
+            });
+            constructionItem.appendChild(constructionCheck);
+            constructionItem.appendChild(document.createTextNode(' Construction'));
+            displaySection.appendChild(constructionItem);
+
+            controlsContainer.appendChild(displaySection);
+
+            // Parameters section
+            const paramsSection = document.createElement('div');
+            paramsSection.className = 'control-section';
+
+            const paramsLabel = document.createElement('div');
+            paramsLabel.className = 'section-label';
+            paramsLabel.textContent = 'Parameters';
+            paramsSection.appendChild(paramsLabel);
+
+            // U value display
+            const uItem = document.createElement('div');
+            uItem.className = 'param-item';
+            uItem.innerHTML = `<span class="param-label">u:</span><span id="uValueDisplay" class="param-value">${currentU.toFixed(2)}</span>`;
+            paramsSection.appendChild(uItem);
+
+            // V value display
+            const vItem = document.createElement('div');
+            vItem.className = 'param-item';
+            vItem.innerHTML = `<span class="param-label">v:</span><span id="vValueDisplay" class="param-value">${currentV.toFixed(2)}</span>`;
+            paramsSection.appendChild(vItem);
+
+            controlsContainer.appendChild(paramsSection);
+
+            // Grid info section
+            const infoSection = document.createElement('div');
+            infoSection.className = 'control-section';
+
+            const infoLabel = document.createElement('div');
+            infoLabel.className = 'section-label';
+            infoLabel.textContent = 'Grid Info';
+            infoSection.appendChild(infoLabel);
+
+            const gridInfo = document.createElement('div');
+            gridInfo.className = 'info-item';
+            gridInfo.textContent = `${gridRows} × ${gridCols} control points`;
+            infoSection.appendChild(gridInfo);
+
+            const degreeInfo = document.createElement('div');
+            degreeInfo.className = 'info-item';
+            degreeInfo.textContent = `Degree: ${gridRows - 1} × ${gridCols - 1}`;
+            infoSection.appendChild(degreeInfo);
+
+            controlsContainer.appendChild(infoSection);
+        }
+
+        function updateParamDisplay() {
+            const uDisplay = document.getElementById('uValueDisplay');
+            const vDisplay = document.getElementById('vValueDisplay');
+            if (uDisplay) uDisplay.textContent = currentU.toFixed(2);
+            if (vDisplay) vDisplay.textContent = currentV.toFixed(2);
+        }
+
+        // Scene setup
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x111111);
-        const camera = new THREE.PerspectiveCamera(45, width/height, 0.1, 2000);
-        camera.position.set(0, 200, 600);
+        const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 2000);
+        camera.position.set(300, 300, 400);
 
-        const renderer = new THREE.WebGLRenderer({antialias: true});
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(width, height);
         container.appendChild(renderer.domElement);
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
+        controls.target.set(0, 0, 0);
 
-        // lights
+        // Lights
         const hemi = new THREE.HemisphereLight(0xffffff, 0x222222, 0.8);
         scene.add(hemi);
         const dir = new THREE.DirectionalLight(0xffffff, 0.6);
-        dir.position.set(0, 500, 200);
+        dir.position.set(200, 500, 200);
         scene.add(dir);
 
-        // create 3D control points from 2D input, centered
-        const p00 = new THREE.Vector3(controlPoints[0].x - width/2, -controlPoints[0].y + height/2, 0);
-        const p10 = new THREE.Vector3(controlPoints[1].x - width/2, -controlPoints[1].y + height/2, 0);
-        const p01 = new THREE.Vector3(controlPoints[2].x - width/2, -controlPoints[2].y + height/2, 0);
-        const p11 = new THREE.Vector3(controlPoints[3].x - width/2, -controlPoints[3].y + height/2, 0);
+        // Control point grid
+        const controlGrid = generateInitialGrid(gridRows, gridCols);
 
-        // control net group (points + connecting lines)
+        // Control net visualization group
         const controlGroup = new THREE.Group();
-        const matPoint = new THREE.MeshStandardMaterial({color: 0xffde38});
+        const matPoint = new THREE.MeshStandardMaterial({ color: 0xffde38 });
+        const matPointHover = new THREE.MeshStandardMaterial({ color: 0xffff88 });
         const sphGeom = new THREE.SphereGeometry(8, 12, 12);
-        [p00,p10,p01,p11].forEach(p => {
-            const m = new THREE.Mesh(sphGeom, matPoint);
-            m.position.copy(p);
-            controlGroup.add(m);
+
+        // Create control point spheres and track them for dragging
+        const controlSpheres: THREE.Mesh[] = [];
+        const sphereToGridIndex = new Map<THREE.Mesh, { row: number; col: number }>();
+
+        for (let i = 0; i < gridRows; i++) {
+            for (let j = 0; j < gridCols; j++) {
+                const m = new THREE.Mesh(sphGeom, matPoint.clone());
+                m.position.copy(controlGrid[i][j]);
+                controlGroup.add(m);
+                controlSpheres.push(m);
+                sphereToGridIndex.set(m, { row: i, col: j });
+            }
+        }
+
+        // Add drag controls for control points
+        const dragControls = new DragControls(controlSpheres, camera, renderer.domElement);
+
+        dragControls.addEventListener('dragstart', (event) => {
+            controls.enabled = false; // Disable orbit controls while dragging
+            const mesh = event.object as THREE.Mesh;
+            mesh.material = matPointHover.clone();
         });
-        const netGeom = new THREE.BufferGeometry().setFromPoints([p00,p10,p11,p01,p00]);
-        const netMat = new THREE.LineBasicMaterial({color:0x888888});
-        const net = new THREE.Line(netGeom, netMat);
-        controlGroup.add(net);
+
+        dragControls.addEventListener('drag', (event) => {
+            const mesh = event.object as THREE.Mesh;
+            const gridIdx = sphereToGridIndex.get(mesh);
+            if (gridIdx) {
+                // Update the control grid position
+                controlGrid[gridIdx.row][gridIdx.col].copy(mesh.position);
+                // Update visualization
+                updateControlNet();
+                rebuildSurface();
+                updateIsoCurves(currentU, currentV);
+                updateConstruction(currentU, currentV);
+            }
+        });
+
+        dragControls.addEventListener('dragend', (event) => {
+            controls.enabled = true; // Re-enable orbit controls
+            const mesh = event.object as THREE.Mesh;
+            mesh.material = matPoint.clone();
+        });
+
+        dragControls.addEventListener('hoveron', (event) => {
+            const mesh = event.object as THREE.Mesh;
+            mesh.material = matPointHover.clone();
+            renderer.domElement.style.cursor = 'grab';
+        });
+
+        dragControls.addEventListener('hoveroff', (event) => {
+            const mesh = event.object as THREE.Mesh;
+            mesh.material = matPoint.clone();
+            renderer.domElement.style.cursor = 'auto';
+        });
+
+        // Create control net lines
+        const netMat = new THREE.LineBasicMaterial({ color: 0x888888 });
+        function updateControlNet() {
+            // Remove old lines (keep only the control point spheres)
+            const sphereSet = new Set(controlSpheres);
+            controlGroup.children = controlGroup.children.filter(c => sphereSet.has(c as THREE.Mesh));
+
+            // Horizontal lines
+            for (let i = 0; i < gridRows; i++) {
+                const pts = controlGrid[i].map(p => p.clone());
+                const geom = new THREE.BufferGeometry().setFromPoints(pts);
+                controlGroup.add(new THREE.Line(geom, netMat));
+            }
+            // Vertical lines
+            for (let j = 0; j < gridCols; j++) {
+                const pts: THREE.Vector3[] = [];
+                for (let i = 0; i < gridRows; i++) {
+                    pts.push(controlGrid[i][j].clone());
+                }
+                const geom = new THREE.BufferGeometry().setFromPoints(pts);
+                controlGroup.add(new THREE.Line(geom, netMat));
+            }
+        }
+        updateControlNet();
         scene.add(controlGroup);
 
-        // surface mesh (bilinear patch sampling) builder
-        const seg = 48;
-        function buildSurfaceMesh() {
+        // Surface mesh builder
+        const seg = 32;
+        function buildSurfaceMesh(): THREE.BufferGeometry {
             const geom = new THREE.BufferGeometry();
-            const positions = [];
-            const uvs = [];
+            const positions: number[] = [];
+            const uvs: number[] = [];
 
-            function p(u: number, v: number){
-                // bilinear interpolation on 2x2 control grid
-                const a = new THREE.Vector3().copy(p00).multiplyScalar((1-u)*(1-v));
-                const b = new THREE.Vector3().copy(p10).multiplyScalar(u*(1-v));
-                const c = new THREE.Vector3().copy(p01).multiplyScalar((1-u)*v);
-                const d = new THREE.Vector3().copy(p11).multiplyScalar(u*v);
-                return new THREE.Vector3().addVectors(a, b).add(c).add(d);
-            }
-
-            for(let i=0;i<=seg;i++){
-                const u = i/seg;
-                for(let j=0;j<=seg;j++){
-                    const v = j/seg;
-                    const q = p(u,v);
-                    positions.push(q.x, q.y, q.z);
-                    uvs.push(u,v);
+            for (let i = 0; i <= seg; i++) {
+                const v = i / seg;
+                for (let j = 0; j <= seg; j++) {
+                    const u = j / seg;
+                    const pt = evaluateSurface(controlGrid, u, v);
+                    positions.push(pt.x, pt.y, pt.z);
+                    uvs.push(u, v);
                 }
             }
 
-            const indices = [];
-            for(let i=0;i<seg;i++){
-                for(let j=0;j<seg;j++){
-                    const a = i*(seg+1)+j;
-                    const b = (i+1)*(seg+1)+j;
-                    const c = (i+1)*(seg+1)+j+1;
-                    const d = i*(seg+1)+j+1;
-                    indices.push(a,b,d);
-                    indices.push(b,c,d);
+            const indices: number[] = [];
+            for (let i = 0; i < seg; i++) {
+                for (let j = 0; j < seg; j++) {
+                    const a = i * (seg + 1) + j;
+                    const b = (i + 1) * (seg + 1) + j;
+                    const c = (i + 1) * (seg + 1) + j + 1;
+                    const d = i * (seg + 1) + j + 1;
+                    indices.push(a, b, d);
+                    indices.push(b, c, d);
                 }
             }
 
@@ -489,72 +733,188 @@ initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '
         }
 
         let surfaceMesh: THREE.Mesh | null = null;
-        const mat = new THREE.MeshStandardMaterial({color:0x3377cc, metalness:0.1, roughness:0.6, side:THREE.DoubleSide});
-        function rebuild(){
-            if(surfaceMesh){
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0x3377cc,
+            metalness: 0.1,
+            roughness: 0.6,
+            side: THREE.DoubleSide
+        });
+
+        function rebuildSurface() {
+            if (surfaceMesh) {
                 scene.remove(surfaceMesh);
                 surfaceMesh.geometry.dispose();
             }
             const g = buildSurfaceMesh();
             surfaceMesh = new THREE.Mesh(g, mat.clone());
-            const wireframeCheck = document.getElementById(wireframeId) as HTMLInputElement;
-            (surfaceMesh.material as THREE.MeshStandardMaterial).wireframe = !!wireframeCheck?.checked;
+            (surfaceMesh.material as THREE.MeshStandardMaterial).wireframe = wireframeEnabled;
             scene.add(surfaceMesh);
         }
+        rebuildSurface();
 
-        rebuild();
+        // Construction visualization group
+        const constructionGroup = new THREE.Group();
+        scene.add(constructionGroup);
 
-        // isoparametric curve at parameter t (v constant)
-        let isoLine: THREE.Line | null = null;
-        function buildIsoLine(t: number) {
-            const pts = [];
-            const steps = 200;
-            for(let i=0;i<=steps;i++){
-                const u = i/steps;
-                const a = new THREE.Vector3().copy(p00).multiplyScalar((1-u)*(1-t));
-                const b = new THREE.Vector3().copy(p10).multiplyScalar(u*(1-t));
-                const c = new THREE.Vector3().copy(p01).multiplyScalar((1-u)*t);
-                const d = new THREE.Vector3().copy(p11).multiplyScalar(u*t);
-                const q = new THREE.Vector3().addVectors(a,b).add(c).add(d);
-                pts.push(q);
+        // Isoparametric curves
+        let isoLineU: THREE.Line | null = null;
+        let isoLineV: THREE.Line | null = null;
+
+        function buildIsoCurve(param: number, isU: boolean, color: number): THREE.Line {
+            const pts: THREE.Vector3[] = [];
+            const steps = 100;
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                const pt = isU ? evaluateSurface(controlGrid, param, t) : evaluateSurface(controlGrid, t, param);
+                pts.push(pt);
             }
-            const g = new THREE.BufferGeometry().setFromPoints(pts);
-            const matl = new THREE.LineBasicMaterial({color:0xffffff});
-            return new THREE.Line(g, matl);
+            const geom = new THREE.BufferGeometry().setFromPoints(pts);
+            const matl = new THREE.LineBasicMaterial({ color, linewidth: 2 });
+            return new THREE.Line(geom, matl);
         }
 
-        function updateIso(t: number){
-            if(isoLine) scene.remove(isoLine);
-            isoLine = buildIsoLine(t);
-            scene.add(isoLine);
+        function updateConstruction(u: number, v: number) {
+            // Clear previous construction
+            while (constructionGroup.children.length > 0) {
+                const child = constructionGroup.children[0];
+                constructionGroup.remove(child);
+                if (child instanceof THREE.Line) child.geometry.dispose();
+                if (child instanceof THREE.Mesh) child.geometry.dispose();
+            }
+
+            if (!constructionEnabled) return;
+
+            // Colors for construction levels
+            const levelColors = [0xff8888, 0xffaa88, 0xffcc88, 0xffee88];
+            const pointGeom = new THREE.SphereGeometry(4, 8, 8);
+
+            // Step 1: Evaluate each row at u, showing intermediate points
+            const rowResults: THREE.Vector3[] = [];
+            for (let i = 0; i < gridRows; i++) {
+                const levels = deCasteljauLevels3D(controlGrid[i], u);
+
+                // Draw intermediate construction lines for this row
+                for (let lvl = 1; lvl < levels.length; lvl++) {
+                    const pts = levels[lvl];
+                    if (pts.length > 1) {
+                        const geom = new THREE.BufferGeometry().setFromPoints(pts);
+                        const lineMat = new THREE.LineBasicMaterial({
+                            color: levelColors[Math.min(lvl - 1, levelColors.length - 1)],
+                            transparent: true,
+                            opacity: 0.6
+                        });
+                        constructionGroup.add(new THREE.Line(geom, lineMat));
+                    }
+                    // Draw intermediate points
+                    for (const pt of pts) {
+                        const sphere = new THREE.Mesh(pointGeom, new THREE.MeshBasicMaterial({
+                            color: levelColors[Math.min(lvl - 1, levelColors.length - 1)]
+                        }));
+                        sphere.position.copy(pt);
+                        sphere.scale.setScalar(0.5 + lvl * 0.2);
+                        constructionGroup.add(sphere);
+                    }
+                }
+                rowResults.push(levels[levels.length - 1][0]);
+            }
+
+            // Draw the column of intermediate row results
+            if (rowResults.length > 1) {
+                const geom = new THREE.BufferGeometry().setFromPoints(rowResults);
+                const lineMat = new THREE.LineBasicMaterial({ color: 0x88ff88, linewidth: 2 });
+                constructionGroup.add(new THREE.Line(geom, lineMat));
+
+                // Mark row result points
+                for (const pt of rowResults) {
+                    const sphere = new THREE.Mesh(pointGeom, new THREE.MeshBasicMaterial({ color: 0x88ff88 }));
+                    sphere.position.copy(pt);
+                    constructionGroup.add(sphere);
+                }
+            }
+
+            // Step 2: Evaluate the column at v
+            const colLevels = deCasteljauLevels3D(rowResults, v);
+            for (let lvl = 1; lvl < colLevels.length; lvl++) {
+                const pts = colLevels[lvl];
+                if (pts.length > 1) {
+                    const geom = new THREE.BufferGeometry().setFromPoints(pts);
+                    const lineMat = new THREE.LineBasicMaterial({
+                        color: 0x88ffff,
+                        transparent: true,
+                        opacity: 0.8
+                    });
+                    constructionGroup.add(new THREE.Line(geom, lineMat));
+                }
+                for (const pt of pts) {
+                    const sphere = new THREE.Mesh(pointGeom, new THREE.MeshBasicMaterial({ color: 0x88ffff }));
+                    sphere.position.copy(pt);
+                    sphere.scale.setScalar(0.7 + lvl * 0.3);
+                    constructionGroup.add(sphere);
+                }
+            }
+
+            // Final point on surface
+            const finalPt = colLevels[colLevels.length - 1][0];
+            const finalSphere = new THREE.Mesh(
+                new THREE.SphereGeometry(6, 12, 12),
+                new THREE.MeshBasicMaterial({ color: 0xffffff })
+            );
+            finalSphere.position.copy(finalPt);
+            constructionGroup.add(finalSphere);
         }
 
-        // initial iso curve
-        updateIso(0.5);
+        function updateIsoCurves(u: number, v: number) {
+            if (isoLineU) {
+                scene.remove(isoLineU);
+                isoLineU.geometry.dispose();
+            }
+            if (isoLineV) {
+                scene.remove(isoLineV);
+                isoLineV.geometry.dispose();
+            }
+            isoLineU = buildIsoCurve(u, true, 0xff6666);  // Red for constant u
+            isoLineV = buildIsoCurve(v, false, 0x66ff66); // Green for constant v
+            scene.add(isoLineU);
+            scene.add(isoLineV);
+        }
 
-        // UI events
-        document.getElementById(wireframeId)?.addEventListener('change', e => {
-            if(surfaceMesh) (surfaceMesh.material as THREE.MeshStandardMaterial).wireframe = (e.target as HTMLInputElement).checked;
-        });
-        document.getElementById(controlNetId)?.addEventListener('change', e => {
-            controlGroup.visible = (e.target as HTMLInputElement).checked;
-        });
+        // Initial state
+        let currentU = 0.5;
+        let currentV = 0.5;
+
+        // Create controls widget
+        createControlsWidget();
+
+        updateIsoCurves(currentU, currentV);
+        updateConstruction(currentU, currentV);
+
+        // Slider events
         document.getElementById(sliderId)?.addEventListener('input', e => {
-            const t = parseFloat((e.target as HTMLInputElement).value);
-            updateIso(t);
+            currentU = parseFloat((e.target as HTMLInputElement).value);
+            updateIsoCurves(currentU, currentV);
+            updateConstruction(currentU, currentV);
+            updateParamDisplay();
         });
 
-        // resize and render loop
-        function onResize(){
+        document.getElementById(sliderVId)?.addEventListener('input', e => {
+            currentV = parseFloat((e.target as HTMLInputElement).value);
+            updateIsoCurves(currentU, currentV);
+            updateConstruction(currentU, currentV);
+            updateParamDisplay();
+        });
+
+        // Resize handler
+        function onResize() {
             const w = container?.clientWidth || 800;
             const h = container?.clientHeight || 500;
-            camera.aspect = w/h;
+            camera.aspect = w / h;
             camera.updateProjectionMatrix();
-            renderer.setSize(w,h);
+            renderer.setSize(w, h);
         }
         window.addEventListener('resize', onResize);
 
-        function animate(){
+        // Animation loop
+        function animate() {
             requestAnimationFrame(animate);
             controls.update();
             renderer.render(scene, camera);
@@ -562,7 +922,7 @@ initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '
         animate();
     }
 
-    initBezierSurface3D('surface3d', 'surfaceCanvasT', 'surfaceWireframe', 'surfaceControlNet', ctrl);
+    initBezierSurface3D('surface3d', 'surfaceCanvasU', 'surfaceCanvasV', 'surfaceControls');
 })();
 
 // 3. B-Splines (Quadratic)
