@@ -1,0 +1,52 @@
+:root {
+    --handle-bezier: #ff3b3b;
+    --handle-bspline: #38ffaf;
+    --handle-nurbs: #38b6ff;
+    --handle-surface: #ffde38;
+    --bg-color: #1a1a1a;
+    --slider-color: #555;
+}
+.reveal { background-color: var(--bg-color); }
+.reveal section { height: 100%; }
+canvas {
+    background: #222;
+    border-radius: 4px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    touch-action: none;
+}
+/* 3D surface container styling */
+#surface3d {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+body { margin: 0; overflow: hidden; }
+
+.slider-container {
+    position: fixed;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 999;
+    width: 320px;
+}
+input[type=range] {
+    width: 100%;
+    cursor: pointer;
+    accent-color: #eee;
+    opacity: 0.5;
+    transition: opacity 0.3s;
+}
+input[type=range]:hover { opacity: 1; }
+
+.checkbox-inline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #ddd;
+    font-size: 13px;
+}
+.checkbox-inline input { transform: scale(1.1); }

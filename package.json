@@ -1,0 +1,21 @@
+{
+  "name": "gig-mini-cours",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/reveal.js": "^5.2.1",
+    "@types/three": "^0.182.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0"
+  },
+  "dependencies": {
+    "reveal.js": "^5.2.1",
+    "three": "^0.182.0"
+  }
+}

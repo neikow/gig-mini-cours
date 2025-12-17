@@ -1,0 +1,401 @@
+import 'reveal.js/dist/reveal.css';
+import 'reveal.js/dist/theme/black.css';
+import './style.css';
+import Reveal from 'reveal.js';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+
+Reveal.initialize({
+    hash: true,
+    controls: false,
+    progress: true,
+    center: true,
+    transition: 'fade'
+});
+
+const width = 800;
+const height = 500;
+
+interface Point {
+    x: number;
+    y: number;
+    w?: number;
+}
+
+function initInteractive2DCanvas(
+    id: string,
+    idSliderT: string,
+    idToggleConstruction: string | null,
+    color: string,
+    initialPoints: Point[],
+    drawCurve: (ctx: CanvasRenderingContext2D, p: Point[], maxT: number) => void,
+    drawExtras?: (ctx: CanvasRenderingContext2D, p: Point[], maxT: number) => void
+) {
+    const canvas = document.getElementById(id) as HTMLCanvasElement;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = width;
+    canvas.height = height;
+
+    let points = initialPoints;
+    let draggedIdx = -1;
+
+    let maxT = 0.5;
+
+    function getMousePos(e: MouseEvent) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        return {
+            x: (e.clientX - rect.left) * scaleX,
+            y: (e.clientY - rect.top) * scaleY
+        };
+    }
+
+    canvas.addEventListener('mousedown', e => {
+        const pos = getMousePos(e);
+        points.forEach((p, i) => {
+            if (Math.hypot(p.x - pos.x, p.y - pos.y) < 15) draggedIdx = i;
+        });
+    });
+
+    window.addEventListener('mousemove', e => {
+        if (draggedIdx !== -1) {
+            const pos = getMousePos(e);
+            points[draggedIdx].x = pos.x;
+            points[draggedIdx].y = pos.y;
+            render();
+        }
+    });
+
+    window.addEventListener('mouseup', () => draggedIdx = -1);
+
+    const slider = document.getElementById(idSliderT) as HTMLInputElement;
+    if (slider) {
+        slider.addEventListener('input', e => {
+            maxT = parseFloat((e.target as HTMLInputElement).value);
+            render();
+        });
+    }
+
+    if (idToggleConstruction) {
+        const toggle = document.getElementById(idToggleConstruction) as HTMLInputElement;
+        if (toggle) {
+            toggle.addEventListener('change', () => {
+                render();
+            });
+        }
+    }
+
+    function render() {
+        if (!ctx) return;
+        ctx.clearRect(0, 0, width, height);
+
+        // Draw Hull
+        ctx.beginPath();
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = '#444';
+        ctx.moveTo(points[0].x, points[0].y);
+        points.forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Draw Curve
+        ctx.beginPath();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3;
+        drawCurve(ctx, points, maxT);
+        ctx.stroke();
+
+        // Draw construction extras if provided
+        if (typeof drawExtras === 'function') {
+            drawExtras(ctx, points, maxT);
+        }
+
+        // Draw Handles
+        points.forEach(p => {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
+    render();
+}
+
+// 1. Bezier Curve
+initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '#ff3b3b', [
+        {x: 100, y: 400}, {x: 200, y: 100}, {x: 600, y: 100}, {x: 700, y: 400}
+    ], (ctx, p, maxT) => {
+        ctx.moveTo(p[0].x, p[0].y);
+        for (let t = 0; t <= maxT; t += 0.01) {
+            const x = Math.pow(1-t,3)*p[0].x + 3*Math.pow(1-t,2)*t*p[1].x + 3*(1-t)*t*t*p[2].x + t*t*t*p[3].x;
+            const y = Math.pow(1-t,3)*p[0].y + 3*Math.pow(1-t,2)*t*p[1].y + 3*(1-t)*t*t*p[2].y + t*t*t*p[3].y;
+            ctx.lineTo(x, y);
+        }
+    },
+    (ctx, p, t) => {
+        const checkbox = document.getElementById('bezierConstruction') as HTMLInputElement;
+        if (!checkbox || !checkbox.checked) return;
+
+        // Level 1
+        const p01 = { x: (1-t)*p[0].x + t*p[1].x, y: (1-t)*p[0].y + t*p[1].y };
+        const p12 = { x: (1-t)*p[1].x + t*p[2].x, y: (1-t)*p[1].y + t*p[2].y };
+        const p23 = { x: (1-t)*p[2].x + t*p[3].x, y: (1-t)*p[2].y + t*p[3].y };
+
+        // Level 2
+        const p012 = { x: (1-t)*p01.x + t*p12.x, y: (1-t)*p01.y + t*p12.y };
+        const p123 = { x: (1-t)*p12.x + t*p23.x, y: (1-t)*p12.y + t*p23.y };
+
+        // Level 3 (point on curve)
+        const p0123 = { x: (1-t)*p012.x + t*p123.x, y: (1-t)*p012.y + t*p123.y };
+
+        // draw level 1 lines
+        ctx.save();
+        ctx.strokeStyle = '#ff8888';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4,3]);
+        ctx.beginPath();
+        ctx.moveTo(p01.x, p01.y);
+        ctx.lineTo(p12.x, p12.y);
+        ctx.lineTo(p23.x, p23.y);
+        ctx.stroke();
+
+        // draw level 2 lines
+        ctx.strokeStyle = '#ffb38b';
+        ctx.beginPath();
+        ctx.moveTo(p012.x, p012.y);
+        ctx.lineTo(p123.x, p123.y);
+        ctx.stroke();
+
+        // draw points for each intermediate
+        ctx.setLineDash([]);
+        const drawPoint = (pt: Point, color: string, r=5) => {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, r, 0, Math.PI*2);
+            ctx.fill();
+        };
+        drawPoint(p01, '#ffbbbb', 4);
+        drawPoint(p12, '#ffbbbb', 4);
+        drawPoint(p23, '#ffbbbb', 4);
+        drawPoint(p012, '#ffd7b0', 5);
+        drawPoint(p123, '#ffd7b0', 5);
+
+        // final point on curve
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(p0123.x, p0123.y, 6, 0, Math.PI*2);
+        ctx.fill();
+
+        ctx.restore();
+    });
+
+// 2. Bezier Surface (3D visualization using Three.js)
+(function(){
+    // initial control points (2D coordinates mapped into 3D plane)
+    const ctrl = [
+        {x: 300, y: 150}, {x: 500, y: 150}, {x: 250, y: 350}, {x: 550, y: 350}
+    ];
+
+    function initBezierSurface3D(containerId: string, sliderId: string, wireframeId: string, controlNetId: string, controlPoints: Point[]) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        const width = container.clientWidth || 800;
+        const height = container.clientHeight || 500;
+
+        // scene, camera, renderer
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111111);
+        const camera = new THREE.PerspectiveCamera(45, width/height, 0.1, 2000);
+        camera.position.set(0, 200, 600);
+
+        const renderer = new THREE.WebGLRenderer({antialias: true});
+        renderer.setSize(width, height);
+        container.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        // lights
+        const hemi = new THREE.HemisphereLight(0xffffff, 0x222222, 0.8);
+        scene.add(hemi);
+        const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+        dir.position.set(0, 500, 200);
+        scene.add(dir);
+
+        // create 3D control points from 2D input, centered
+        const p00 = new THREE.Vector3(controlPoints[0].x - width/2, -controlPoints[0].y + height/2, 0);
+        const p10 = new THREE.Vector3(controlPoints[1].x - width/2, -controlPoints[1].y + height/2, 0);
+        const p01 = new THREE.Vector3(controlPoints[2].x - width/2, -controlPoints[2].y + height/2, 0);
+        const p11 = new THREE.Vector3(controlPoints[3].x - width/2, -controlPoints[3].y + height/2, 0);
+
+        // control net group (points + connecting lines)
+        const controlGroup = new THREE.Group();
+        const matPoint = new THREE.MeshStandardMaterial({color: 0xffde38});
+        const sphGeom = new THREE.SphereGeometry(8, 12, 12);
+        [p00,p10,p01,p11].forEach(p => {
+            const m = new THREE.Mesh(sphGeom, matPoint);
+            m.position.copy(p);
+            controlGroup.add(m);
+        });
+        const netGeom = new THREE.BufferGeometry().setFromPoints([p00,p10,p11,p01,p00]);
+        const netMat = new THREE.LineBasicMaterial({color:0x888888});
+        const net = new THREE.Line(netGeom, netMat);
+        controlGroup.add(net);
+        scene.add(controlGroup);
+
+        // surface mesh (bilinear patch sampling) builder
+        const seg = 48;
+        function buildSurfaceMesh() {
+            const geom = new THREE.BufferGeometry();
+            const positions = [];
+            const uvs = [];
+
+            function p(u: number, v: number){
+                // bilinear interpolation on 2x2 control grid
+                const a = new THREE.Vector3().copy(p00).multiplyScalar((1-u)*(1-v));
+                const b = new THREE.Vector3().copy(p10).multiplyScalar(u*(1-v));
+                const c = new THREE.Vector3().copy(p01).multiplyScalar((1-u)*v);
+                const d = new THREE.Vector3().copy(p11).multiplyScalar(u*v);
+                return new THREE.Vector3().addVectors(a, b).add(c).add(d);
+            }
+
+            for(let i=0;i<=seg;i++){
+                const u = i/seg;
+                for(let j=0;j<=seg;j++){
+                    const v = j/seg;
+                    const q = p(u,v);
+                    positions.push(q.x, q.y, q.z);
+                    uvs.push(u,v);
+                }
+            }
+
+            const indices = [];
+            for(let i=0;i<seg;i++){
+                for(let j=0;j<seg;j++){
+                    const a = i*(seg+1)+j;
+                    const b = (i+1)*(seg+1)+j;
+                    const c = (i+1)*(seg+1)+j+1;
+                    const d = i*(seg+1)+j+1;
+                    indices.push(a,b,d);
+                    indices.push(b,c,d);
+                }
+            }
+
+            geom.setIndex(indices);
+            geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+            geom.computeVertexNormals();
+            return geom;
+        }
+
+        let surfaceMesh: THREE.Mesh | null = null;
+        const mat = new THREE.MeshStandardMaterial({color:0x3377cc, metalness:0.1, roughness:0.6, side:THREE.DoubleSide});
+        function rebuild(){
+            if(surfaceMesh){
+                scene.remove(surfaceMesh);
+                surfaceMesh.geometry.dispose();
+            }
+            const g = buildSurfaceMesh();
+            surfaceMesh = new THREE.Mesh(g, mat.clone());
+            const wireframeCheck = document.getElementById(wireframeId) as HTMLInputElement;
+            (surfaceMesh.material as THREE.MeshStandardMaterial).wireframe = !!wireframeCheck?.checked;
+            scene.add(surfaceMesh);
+        }
+
+        rebuild();
+
+        // isoparametric curve at parameter t (v constant)
+        let isoLine: THREE.Line | null = null;
+        function buildIsoLine(t: number) {
+            const pts = [];
+            const steps = 200;
+            for(let i=0;i<=steps;i++){
+                const u = i/steps;
+                const a = new THREE.Vector3().copy(p00).multiplyScalar((1-u)*(1-t));
+                const b = new THREE.Vector3().copy(p10).multiplyScalar(u*(1-t));
+                const c = new THREE.Vector3().copy(p01).multiplyScalar((1-u)*t);
+                const d = new THREE.Vector3().copy(p11).multiplyScalar(u*t);
+                const q = new THREE.Vector3().addVectors(a,b).add(c).add(d);
+                pts.push(q);
+            }
+            const g = new THREE.BufferGeometry().setFromPoints(pts);
+            const matl = new THREE.LineBasicMaterial({color:0xffffff});
+            return new THREE.Line(g, matl);
+        }
+
+        function updateIso(t: number){
+            if(isoLine) scene.remove(isoLine);
+            isoLine = buildIsoLine(t);
+            scene.add(isoLine);
+        }
+
+        // initial iso curve
+        updateIso(0.5);
+
+        // UI events
+        document.getElementById(wireframeId)?.addEventListener('change', e => {
+            if(surfaceMesh) (surfaceMesh.material as THREE.MeshStandardMaterial).wireframe = (e.target as HTMLInputElement).checked;
+        });
+        document.getElementById(controlNetId)?.addEventListener('change', e => {
+            controlGroup.visible = (e.target as HTMLInputElement).checked;
+        });
+        document.getElementById(sliderId)?.addEventListener('input', e => {
+            const t = parseFloat((e.target as HTMLInputElement).value);
+            updateIso(t);
+        });
+
+        // resize and render loop
+        function onResize(){
+            const w = container?.clientWidth || 800;
+            const h = container?.clientHeight || 500;
+            camera.aspect = w/h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w,h);
+        }
+        window.addEventListener('resize', onResize);
+
+        function animate(){
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+    }
+
+    initBezierSurface3D('surface3d', 'surfaceCanvasT', 'surfaceWireframe', 'surfaceControlNet', ctrl);
+})();
+
+// 3. B-Splines (Quadratic)
+initInteractive2DCanvas('bsplineCanvas', 'bsplineCanvasT', null, '#38ffaf', [
+    {x: 100, y: 300}, {x: 250, y: 100}, {x: 400, y: 300}, {x: 550, y: 100}, {x: 700, y: 300}
+], (ctx, p, maxT) => {
+    for (let i = 0; i < p.length - 2; i++) {
+        for (let t = 0; t <= maxT; t += 0.01) {
+            const b0 = 0.5 * Math.pow(1-t, 2);
+            const b1 = 0.5 + t - t*t;
+            const b2 = 0.5 * t*t;
+            const x = b0*p[i].x + b1*p[i+1].x + b2*p[i+2].x;
+            const y = b0*p[i].y + b1*p[i+1].y + b2*p[i+2].y;
+            if (t === 0 && i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+    }
+});
+
+// 4. NURBS (Rational Bezier Example)
+const nurbsPts = [{x: 150, y: 400, w: 1}, {x: 400, y: 50, w: 5}, {x: 650, y: 400, w: 1}];
+initInteractive2DCanvas('nurbsCanvas', 'nurbsCanvasT', null, '#38b6ff', nurbsPts, (ctx, p, maxT) => {
+    ctx.moveTo(p[0].x, p[0].y);
+    for (let t = 0; t <= maxT; t += 0.01) {
+        const w0 = Math.pow(1-t, 2) * (p[0].w || 1);
+        const w1 = 2 * (1-t) * t * (p[1].w || 1);
+        const w2 = t * t * (p[2].w || 1);
+        const wSum = w0 + w1 + w2;
+        const x = (w0*p[0].x + w1*p[1].x + w2*p[2].x) / wSum;
+        const y = (w0*p[0].y + w1*p[1].y + w2*p[2].y) / wSum;
+        ctx.lineTo(x, y);
+    }
+});
