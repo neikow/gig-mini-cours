@@ -166,12 +166,14 @@ export function initInteractive2DCanvas(config: Interactive2DCanvasConfig): void
             }
             ctx.fill();
 
-            // Draw point label
-            ctx.fillStyle = '#fff';
-            ctx.font = '12px monospace';
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(`P${index}`, p.x + 12, p.y);
+            if (!p.fixed) {
+              // Draw point label
+              ctx.fillStyle = '#fff';
+              ctx.font = '12px monospace';
+              ctx.textAlign = 'left';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(`P${index}`, p.x + 12, p.y);
+            }
         });
 
         updatePointsEditor();

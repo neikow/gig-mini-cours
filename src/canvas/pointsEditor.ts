@@ -23,6 +23,9 @@ export function createPointsEditor(
     container.appendChild(header);
 
     points.forEach((point, index) => {
+        if (point.fixed) {
+          return;
+        }
         const item = document.createElement('div');
         item.className = 'point-item' + (point.fixed ? ' fixed' : '');
         item.style.setProperty('--point-color', point.fixed ? '#666' : color);
