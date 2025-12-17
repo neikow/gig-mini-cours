@@ -133,17 +133,26 @@ body { margin: 0; overflow: hidden; }
     min-width: 12px;
 }
 
-.points-editor .weight-group input[type="range"] {
+.points-editor .weight-group input[type="number"] {
     width: 60px;
-    height: 4px;
-    cursor: pointer;
-    accent-color: var(--point-color, #38b6ff);
+    padding: 3px 5px;
+    border: 1px solid #555;
+    border-radius: 3px;
+    background: #222;
+    color: #fff;
+    font-family: monospace;
+    font-size: 11px;
 }
 
-.points-editor .weight-group .weight-value {
-    min-width: 24px;
-    text-align: right;
-    color: #aaa;
+.points-editor .weight-group input[type="number"]:disabled {
+    background: #1a1a1a;
+    color: #666;
+    cursor: not-allowed;
+}
+
+.points-editor .weight-group input[type="number"]:focus {
+    outline: none;
+    border-color: #666;
 }
 
 .points-editor .btn-delete {
@@ -198,7 +207,7 @@ body { margin: 0; overflow: hidden; }
     left: 50%;
     transform: translateX(-50%);
     z-index: 999;
-    width: 30%;
+    width: 50%;
     font-family: monospace;
 }
 input[type=range] {

@@ -104,7 +104,7 @@ function initInteractive2DCanvas(
         pointsEditorContainer.style.setProperty('--point-color', color);
 
         const header = document.createElement('h3');
-        header.textContent = 'Control Points';
+        header.textContent = 'Points';
         pointsEditorContainer.appendChild(header);
 
         points.forEach((point, index) => {
@@ -184,27 +184,21 @@ function initInteractive2DCanvas(
                 wLabel.textContent = 'w:';
                 weightGroup.appendChild(wLabel);
 
-                const wRange = document.createElement('input');
-                wRange.type = 'range';
-                wRange.min = '0.1';
-                wRange.max = '10';
-                wRange.step = '0.1';
-                wRange.value = point.w.toString();
-                wRange.disabled = !!point.fixed;
+                const wInput = document.createElement('input');
+                wInput.type = 'number';
+                wInput.min = '0.1';
+                wInput.max = '100';
+                wInput.step = '0.1';
+                wInput.value = point.w.toString();
+                wInput.disabled = !!point.fixed;
 
-                const wValue = document.createElement('span');
-                wValue.className = 'weight-value';
-                wValue.textContent = point.w.toFixed(1);
-
-                wRange.addEventListener('input', (e) => {
-                    const newW = parseFloat((e.target as HTMLInputElement).value);
-                    point.w = newW;
-                    wValue.textContent = newW.toFixed(1);
+                wInput.addEventListener('change', (e) => {
+                    const newW = parseFloat((e.target as HTMLInputElement).value) || 1;
+                    point.w = Math.max(0.1, newW);
                     render();
                 });
 
-                weightGroup.appendChild(wRange);
-                weightGroup.appendChild(wValue);
+                weightGroup.appendChild(wInput);
                 item.appendChild(weightGroup);
             }
 
@@ -283,70 +277,114 @@ function initInteractive2DCanvas(
     render();
 }
 
-// 1. Bezier Curve
+// Helper: de Casteljau algorithm for N points - returns point on curve at parameter t
+function deCasteljau(points: Point[], t: number): Point {
+    if (points.length === 1) return points[0];
+    const newPoints: Point[] = [];
+    for (let i = 0; i < points.length - 1; i++) {
+        newPoints.push({
+            x: (1 - t) * points[i].x + t * points[i + 1].x,
+            y: (1 - t) * points[i].y + t * points[i + 1].y
+        });
+    }
+    return deCasteljau(newPoints, t);
+}
+
+// Helper: get all intermediate levels from de Casteljau (for construction visualization)
+function deCasteljauLevels(points: Point[], t: number): Point[][] {
+    const levels: Point[][] = [points.slice()];
+    let current = points;
+    while (current.length > 1) {
+        const next: Point[] = [];
+        for (let i = 0; i < current.length - 1; i++) {
+            next.push({
+                x: (1 - t) * current[i].x + t * current[i + 1].x,
+                y: (1 - t) * current[i].y + t * current[i + 1].y
+            });
+        }
+        levels.push(next);
+        current = next;
+    }
+    return levels;
+}
+
+// 1. Bezier Curve (Generalized for N points)
 initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', 'bezierPoints', '#ff3b3b', [
         {x: 100, y: 400}, {x: 200, y: 100}, {x: 600, y: 100}, {x: 700, y: 400}
     ], false, (ctx, p, maxT) => {
+        if (p.length < 2) return;
         ctx.moveTo(p[0].x, p[0].y);
         for (let t = 0; t <= maxT; t += 0.01) {
-            const x = Math.pow(1-t,3)*p[0].x + 3*Math.pow(1-t,2)*t*p[1].x + 3*(1-t)*t*t*p[2].x + t*t*t*p[3].x;
-            const y = Math.pow(1-t,3)*p[0].y + 3*Math.pow(1-t,2)*t*p[1].y + 3*(1-t)*t*t*p[2].y + t*t*t*p[3].y;
-            ctx.lineTo(x, y);
+            const pt = deCasteljau(p, t);
+            ctx.lineTo(pt.x, pt.y);
         }
+        // Ensure we draw exactly to maxT
+        const endPt = deCasteljau(p, maxT);
+        ctx.lineTo(endPt.x, endPt.y);
     },
     (ctx, p, t) => {
         const checkbox = document.getElementById('bezierConstruction') as HTMLInputElement;
         if (!checkbox || !checkbox.checked) return;
+        if (p.length < 2) return;
 
-        // Level 1
-        const p01 = { x: (1-t)*p[0].x + t*p[1].x, y: (1-t)*p[0].y + t*p[1].y };
-        const p12 = { x: (1-t)*p[1].x + t*p[2].x, y: (1-t)*p[1].y + t*p[2].y };
-        const p23 = { x: (1-t)*p[2].x + t*p[3].x, y: (1-t)*p[2].y + t*p[3].y };
+        const levels = deCasteljauLevels(p, t);
 
-        // Level 2
-        const p012 = { x: (1-t)*p01.x + t*p12.x, y: (1-t)*p01.y + t*p12.y };
-        const p123 = { x: (1-t)*p12.x + t*p23.x, y: (1-t)*p12.y + t*p23.y };
+        // Color gradient for levels (from red to orange to yellow)
+        const levelColors = [
+            '#ff8888', '#ffaa88', '#ffcc88', '#ffdd88', '#ffee88', '#ffffaa'
+        ];
+        const pointColors = [
+            '#ffbbbb', '#ffd0b0', '#ffe0c0', '#fff0d0', '#ffffe0', '#ffffff'
+        ];
 
-        // Level 3 (point on curve)
-        const p0123 = { x: (1-t)*p012.x + t*p123.x, y: (1-t)*p012.y + t*p123.y };
-
-        // draw level 1 lines
         ctx.save();
-        ctx.strokeStyle = '#ff8888';
         ctx.lineWidth = 1.5;
-        ctx.setLineDash([4,3]);
-        ctx.beginPath();
-        ctx.moveTo(p01.x, p01.y);
-        ctx.lineTo(p12.x, p12.y);
-        ctx.lineTo(p23.x, p23.y);
-        ctx.stroke();
+        ctx.setLineDash([4, 3]);
 
-        // draw level 2 lines
-        ctx.strokeStyle = '#ffb38b';
-        ctx.beginPath();
-        ctx.moveTo(p012.x, p012.y);
-        ctx.lineTo(p123.x, p123.y);
-        ctx.stroke();
+        // Draw construction lines for each intermediate level (skip level 0 - original points)
+        for (let level = 1; level < levels.length; level++) {
+            const pts = levels[level];
+            if (pts.length < 1) continue;
 
-        // draw points for each intermediate
+            const colorIdx = Math.min(level - 1, levelColors.length - 1);
+            ctx.strokeStyle = levelColors[colorIdx];
+
+            if (pts.length > 1) {
+                ctx.beginPath();
+                ctx.moveTo(pts[0].x, pts[0].y);
+                for (let i = 1; i < pts.length; i++) {
+                    ctx.lineTo(pts[i].x, pts[i].y);
+                }
+                ctx.stroke();
+            }
+        }
+
+        // Draw intermediate points
         ctx.setLineDash([]);
-        const drawPoint = (pt: Point, color: string, r=5) => {
+        const drawPoint = (pt: Point, color: string, r = 4) => {
             ctx.fillStyle = color;
             ctx.beginPath();
-            ctx.arc(pt.x, pt.y, r, 0, Math.PI*2);
+            ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
             ctx.fill();
         };
-        drawPoint(p01, '#ffbbbb', 4);
-        drawPoint(p12, '#ffbbbb', 4);
-        drawPoint(p23, '#ffbbbb', 4);
-        drawPoint(p012, '#ffd7b0', 5);
-        drawPoint(p123, '#ffd7b0', 5);
 
-        // final point on curve
-        ctx.fillStyle = '#fff';
-        ctx.beginPath();
-        ctx.arc(p0123.x, p0123.y, 6, 0, Math.PI*2);
-        ctx.fill();
+        for (let level = 1; level < levels.length - 1; level++) {
+            const pts = levels[level];
+            const colorIdx = Math.min(level - 1, pointColors.length - 1);
+            const radius = 3 + level * 0.5;
+            for (const pt of pts) {
+                drawPoint(pt, pointColors[colorIdx], radius);
+            }
+        }
+
+        // Draw final point on curve (last level has exactly 1 point)
+        if (levels.length > 1) {
+            const finalPt = levels[levels.length - 1][0];
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(finalPt.x, finalPt.y, 6, 0, Math.PI * 2);
+            ctx.fill();
+        }
 
         ctx.restore();
     });
