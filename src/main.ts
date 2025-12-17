@@ -17,7 +17,8 @@ Reveal.initialize({
     controls: true,
     progress: true,
     center: true,
-    transition: 'fade'
+    transition: 'fade',
+    touch: false,
 });
 
 // Initialize all curve visualizations

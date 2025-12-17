@@ -23,10 +23,12 @@ canvas {
     background: #222;
     border-radius: 4px;
     flex-shrink: 0;
+    touch-action: none;
 }
 
 #surface3d canvas {
     border-radius: 4px;
+    touch-action: none;
 }
 
 body { margin: 0; overflow: hidden; }

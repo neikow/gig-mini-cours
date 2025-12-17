@@ -71,6 +71,18 @@ export function initInteractive2DCanvas(config: Interactive2DCanvasConfig): void
         };
     }
 
+    function getTouchPos(e: TouchEvent) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const touch = e.touches[0] || e.changedTouches[0];
+        return {
+            x: (touch.clientX - rect.left) * scaleX,
+            y: (touch.clientY - rect.top) * scaleY
+        };
+    }
+
+    // Mouse events
     canvas.addEventListener('mousedown', e => {
         const pos = getMousePos(e);
         points.forEach((p, i) => {
@@ -90,6 +102,32 @@ export function initInteractive2DCanvas(config: Interactive2DCanvasConfig): void
     });
 
     window.addEventListener('mouseup', () => draggedIdx = -1);
+
+    // Touch events for mobile/tablet
+    canvas.addEventListener('touchstart', e => {
+        const pos = getTouchPos(e);
+        points.forEach((p, i) => {
+            if (Math.hypot(p.x - pos.x, p.y - pos.y) < 25) { // Larger touch target
+                draggedIdx = i;
+                e.preventDefault(); // Prevent scrolling when dragging points
+            }
+        });
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', e => {
+        if (draggedIdx !== -1) {
+            if (points[draggedIdx].fixed) return;
+            e.preventDefault(); // Prevent scrolling while dragging
+            const pos = getTouchPos(e);
+            points[draggedIdx].x = pos.x;
+            points[draggedIdx].y = pos.y;
+            render();
+            updatePointsEditor();
+        }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', () => draggedIdx = -1);
+    canvas.addEventListener('touchcancel', () => draggedIdx = -1);
 
     const slider = document.getElementById(sliderId) as HTMLInputElement;
     if (slider) {
