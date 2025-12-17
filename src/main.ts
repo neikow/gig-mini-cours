@@ -255,7 +255,7 @@ function initInteractive2DCanvas(
         }
 
         // Draw Handles
-        points.forEach(p => {
+        points.forEach((p, index) => {
             if (p.fixed) {
                 ctx.fillStyle = '#888';
             } else {
@@ -270,6 +270,13 @@ function initInteractive2DCanvas(
               ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
             }
             ctx.fill();
+
+            // Draw point label
+            ctx.fillStyle = '#fff';
+            ctx.font = '12px monospace';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`P${index}`, p.x + 12, p.y);
         });
 
         // Update points editor display
@@ -1138,7 +1145,38 @@ const nurbsPts = [
   {x: 500, y: 80, w: 3},
   {x: 650, y: 400, w: 1}
 ];
-initInteractive2DCanvas('nurbsCanvas', 'nurbsCanvasT', null, 'nurbsPoints', '#38b6ff', nurbsPts, true, (ctx, p, maxT) => {
+
+// Helper: Rational de Casteljau algorithm - returns all intermediate levels for construction
+// Each point carries x, y, and w (weight in homogeneous coordinates)
+function rationalDeCasteljauLevels(points: Point[], t: number): Point[][] {
+  // Convert to homogeneous coordinates (wx, wy, w)
+  const homogeneous = points.map(p => ({
+    x: p.x * (p.w ?? 1),
+    y: p.y * (p.w ?? 1),
+    w: p.w ?? 1
+  }));
+
+  const levels: Point[][] = [points.map(p => ({ x: p.x, y: p.y, w: p.w ?? 1 }))];
+  let current = homogeneous;
+
+  while (current.length > 1) {
+    const next: { x: number; y: number; w: number }[] = [];
+    for (let i = 0; i < current.length - 1; i++) {
+      // Linear interpolation in homogeneous coordinates
+      const wx = (1 - t) * current[i].x + t * current[i + 1].x;
+      const wy = (1 - t) * current[i].y + t * current[i + 1].y;
+      const w = (1 - t) * current[i].w + t * current[i + 1].w;
+      next.push({ x: wx, y: wy, w });
+    }
+    // Convert back to Cartesian for visualization
+    levels.push(next.map(p => ({ x: p.x / p.w, y: p.y / p.w, w: p.w })));
+    current = next;
+  }
+
+  return levels;
+}
+
+initInteractive2DCanvas('nurbsCanvas', 'nurbsCanvasT', 'nurbsConstruction', 'nurbsPoints', '#38b6ff', nurbsPts, true, (ctx, p, maxT) => {
   const n = p.length - 1; // Degree of the curve
 
   // Precompute binomial coefficients
@@ -1172,4 +1210,70 @@ initInteractive2DCanvas('nurbsCanvas', 'nurbsCanvasT', null, 'nurbsPoints', '#38
   // Ensure the curve ends exactly at maxT
   const endPt = getRationalBezierPoint(maxT);
   ctx.lineTo(endPt.x, endPt.y);
+},
+(ctx, p, t) => {
+  const checkbox = document.getElementById('nurbsConstruction') as HTMLInputElement;
+  if (!checkbox || !checkbox.checked) return;
+  if (p.length < 2) return;
+
+  const levels = rationalDeCasteljauLevels(p, t);
+
+  // Color gradient for levels (blue tones for NURBS)
+  const levelColors = [
+    '#88ccff', '#99ddff', '#aaeeff', '#bbffff', '#ccffff', '#ddffff'
+  ];
+  const pointColors = [
+    '#aaddff', '#bbeeee', '#ccffff', '#ddfffe', '#eeffff', '#ffffff'
+  ];
+
+  ctx.save();
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 3]);
+
+  // Draw construction lines for each intermediate level (skip level 0 - original points)
+  for (let level = 1; level < levels.length; level++) {
+    const pts = levels[level];
+    if (pts.length < 1) continue;
+
+    const colorIdx = Math.min(level - 1, levelColors.length - 1);
+    ctx.strokeStyle = levelColors[colorIdx];
+
+    if (pts.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) {
+        ctx.lineTo(pts[i].x, pts[i].y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  // Draw intermediate points
+  ctx.setLineDash([]);
+  const drawPoint = (pt: Point, color: string, r = 4) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  for (let level = 1; level < levels.length - 1; level++) {
+    const pts = levels[level];
+    const colorIdx = Math.min(level - 1, pointColors.length - 1);
+    const radius = 3 + level * 0.5;
+    for (const pt of pts) {
+      drawPoint(pt, pointColors[colorIdx], radius);
+    }
+  }
+
+  // Draw final point on curve (last level has exactly 1 point)
+  if (levels.length > 1) {
+    const finalPt = levels[levels.length - 1][0];
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(finalPt.x, finalPt.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
 });
