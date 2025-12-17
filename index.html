@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Geometric Curves</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/theme/black.min.css">
+  <style>
+      :root {
+          --handle-bezier: #ff3b3b;
+          --handle-bspline: #38ffaf;
+          --handle-nurbs: #38b6ff;
+          --handle-surface: #ffde38;
+          --bg-color: #1a1a1a;
+          --slider-color: #555;
+      }
+      .reveal { background-color: var(--bg-color); }
+      .reveal section { height: 100%; }
+      canvas {
+          background: #222;
+          border-radius: 4px;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+          touch-action: none;
+      }
+      body { margin: 0; overflow: hidden; }
+
+      .slider-container {
+          position: fixed;
+          display: flex;
+          gap: 12px;
+          align-items: center;
+          bottom: 30px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 999;
+          width: 320px;
+      }
+      input[type=range] {
+          width: 100%;
+          cursor: pointer;
+          accent-color: #eee;
+          opacity: 0.5;
+          transition: opacity 0.3s;
+      }
+      input[type=range]:hover { opacity: 1; }
+
+      .checkbox-inline {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          color: #ddd;
+          font-size: 13px;
+      }
+      .checkbox-inline input { transform: scale(1.1); }
+
+  </style>
+</head>
+<body>
+<div class="reveal">
+  <div class="slides">
+    <section>
+      <h1>Courbe de bézier</h1>
+      <canvas id="bezierCanvas"></canvas>
+      <div class="slider-container">
+        <label for='bezierCanvasT'>t</label>
+        <input
+          type="range"
+          id="bezierCanvasT"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.5"
+        />
+        <label class="checkbox-inline">
+          <input type="checkbox" id="bezierConstruction" checked />
+          Show construction
+        </label>
+      </div>
+    </section>
+
+    <section>
+      <h1>Surface de bézier</h1>
+      <canvas id="surfaceCanvas"></canvas>
+      <div class="slider-container">
+        <label for='surfaceCanvasT'>t</label>
+        <input
+          type="range"
+          id="surfaceCanvasT"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.5"
+        />
+      </div>
+    </section>
+
+    <section>
+      <h1>BSpline</h1>
+
+      <canvas id="bsplineCanvas"></canvas>
+      <div class="slider-container">
+        <label for='bsplineCanvasT'>t</label>
+        <input
+          type="range"
+          id="bsplineCanvasT"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.5"
+        />
+      </div>
+    </section>
+
+    <section>
+      <h1>NURBs</h1>
+
+      <canvas id="nurbsCanvas"></canvas>
+      <div class="slider-container">
+        <label for='nurbsCanvasT'>t</label>
+        <input
+          type="range"
+          id="nurbsCanvasT"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.5"
+        />
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.js"></script>
+<script>
+    Reveal.initialize({
+        hash: true,
+        controls: false,
+        progress: true,
+        center: true,
+        transition: 'fade'
+    });
+
+    const width = 800;
+    const height = 500;
+
+    function initInteractive2DCanvas(id, idSliderT, idToggleConstruction, color, initialPoints, drawCurve, drawExtras) {
+        const canvas = document.getElementById(id);
+        const ctx = canvas.getContext('2d');
+        canvas.width = width;
+        canvas.height = height;
+
+        let points = initialPoints;
+        let draggedIdx = -1;
+
+        let maxT = 0.5;
+
+        function getMousePos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            return {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+        }
+
+        canvas.addEventListener('mousedown', e => {
+            const pos = getMousePos(e);
+            points.forEach((p, i) => {
+                if (Math.hypot(p.x - pos.x, p.y - pos.y) < 15) draggedIdx = i;
+            });
+        });
+
+        window.addEventListener('mousemove', e => {
+            if (draggedIdx !== -1) {
+                const pos = getMousePos(e);
+                points[draggedIdx].x = pos.x;
+                points[draggedIdx].y = pos.y;
+                render();
+            }
+        });
+
+        window.addEventListener('mouseup', () => draggedIdx = -1);
+
+        document.getElementById(idSliderT).addEventListener('input', e => {
+            maxT = parseFloat(e.target.value);
+            render();
+        });
+
+        document.getElementById(idToggleConstruction)?.addEventListener('change', () => {
+            render();
+        });
+
+        function render() {
+            ctx.clearRect(0, 0, width, height);
+
+            // Draw Hull
+            ctx.beginPath();
+            ctx.setLineDash([5, 5]);
+            ctx.strokeStyle = '#444';
+            ctx.moveTo(points[0].x, points[0].y);
+            points.forEach(p => ctx.lineTo(p.x, p.y));
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw Curve
+            ctx.beginPath();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+            drawCurve(ctx, points, maxT);
+            ctx.stroke();
+
+            // Draw construction extras if provided
+            if (typeof drawExtras === 'function') {
+                drawExtras(ctx, points, maxT);
+            }
+
+            // Draw Handles
+            points.forEach(p => {
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+        render();
+    }
+
+    // 1. Bezier Curve
+    initInteractive2DCanvas('bezierCanvas', 'bezierCanvasT', 'bezierConstruction', '#ff3b3b', [
+            {x: 100, y: 400}, {x: 200, y: 100}, {x: 600, y: 100}, {x: 700, y: 400}
+        ], (ctx, p, maxT) => {
+            ctx.moveTo(p[0].x, p[0].y);
+            for (let t = 0; t <= maxT; t += 0.01) {
+                const x = Math.pow(1-t,3)*p[0].x + 3*Math.pow(1-t,2)*t*p[1].x + 3*(1-t)*t*t*p[2].x + t*t*t*p[3].x;
+                const y = Math.pow(1-t,3)*p[0].y + 3*Math.pow(1-t,2)*t*p[1].y + 3*(1-t)*t*t*p[2].y + t*t*t*p[3].y;
+                ctx.lineTo(x, y);
+            }
+        },
+        (ctx, p, t) => {
+            const checkbox = document.getElementById('bezierConstruction');
+            if (!checkbox || !checkbox.checked) return;
+
+            // Level 1
+            const p01 = { x: (1-t)*p[0].x + t*p[1].x, y: (1-t)*p[0].y + t*p[1].y };
+            const p12 = { x: (1-t)*p[1].x + t*p[2].x, y: (1-t)*p[1].y + t*p[2].y };
+            const p23 = { x: (1-t)*p[2].x + t*p[3].x, y: (1-t)*p[2].y + t*p[3].y };
+
+            // Level 2
+            const p012 = { x: (1-t)*p01.x + t*p12.x, y: (1-t)*p01.y + t*p12.y };
+            const p123 = { x: (1-t)*p12.x + t*p23.x, y: (1-t)*p12.y + t*p23.y };
+
+            // Level 3 (point on curve)
+            const p0123 = { x: (1-t)*p012.x + t*p123.x, y: (1-t)*p012.y + t*p123.y };
+
+            // draw level 1 lines
+            ctx.save();
+            ctx.strokeStyle = '#ff8888';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4,3]);
+            ctx.beginPath();
+            ctx.moveTo(p01.x, p01.y);
+            ctx.lineTo(p12.x, p12.y);
+            ctx.lineTo(p23.x, p23.y);
+            ctx.stroke();
+
+            // draw level 2 lines
+            ctx.strokeStyle = '#ffb38b';
+            ctx.beginPath();
+            ctx.moveTo(p012.x, p012.y);
+            ctx.lineTo(p123.x, p123.y);
+            ctx.stroke();
+
+            // draw points for each intermediate
+            ctx.setLineDash([]);
+            const drawPoint = (pt, color, r=5) => {
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(pt.x, pt.y, r, 0, Math.PI*2);
+                ctx.fill();
+            };
+            drawPoint(p01, '#ffbbbb', 4);
+            drawPoint(p12, '#ffbbbb', 4);
+            drawPoint(p23, '#ffbbbb', 4);
+            drawPoint(p012, '#ffd7b0', 5);
+            drawPoint(p123, '#ffd7b0', 5);
+
+            // final point on curve
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(p0123.x, p0123.y, 6, 0, Math.PI*2);
+            ctx.fill();
+
+            ctx.restore();
+        });
+
+    // 2. Bezier Surface (Wireframe projection)
+    initInteractive2DCanvas('surfaceCanvas', 'surfaceCanvasT', '', '#ffde38', [
+        {x: 300, y: 150}, {x: 500, y: 150}, {x: 250, y: 350}, {x: 550, y: 350}
+    ], (ctx, p, maxT) => {
+        // Draws rows and columns of a simple patch
+        const grid = 5;
+        for(let i=0; i<=grid; i++) {
+            let v = i/grid;
+            ctx.moveTo(p[0].x*(1-v) + p[2].x*v, p[0].y*(1-v) + p[2].y*v);
+            ctx.lineTo(p[1].x*(1-v) + p[3].x*v, p[1].y*(1-v) + p[3].y*v);
+        }
+    });
+
+    // 3. B-Splines (Quadratic)
+    initInteractive2DCanvas('bsplineCanvas', 'bsplineCanvasT', '', '#38ffaf', [
+        {x: 100, y: 300}, {x: 250, y: 100}, {x: 400, y: 300}, {x: 550, y: 100}, {x: 700, y: 300}
+    ], (ctx, p, maxT) => {
+        for (let i = 0; i < p.length - 2; i++) {
+            for (let t = 0; t <= maxT; t += 0.01) {
+                const b0 = 0.5 * Math.pow(1-t, 2);
+                const b1 = 0.5 + t - t*t;
+                const b2 = 0.5 * t*t;
+                const x = b0*p[i].x + b1*p[i+1].x + b2*p[i+2].x;
+                const y = b0*p[i].y + b1*p[i+1].y + b2*p[i+2].y;
+                if (t === 0 && i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+        }
+    });
+
+    // 4. NURBS (Rational Bezier Example)
+    const nurbsPts = [{x: 150, y: 400, w: 1}, {x: 400, y: 50, w: 5}, {x: 650, y: 400, w: 1}];
+    initInteractive2DCanvas('nurbsCanvas', 'nurbsCanvasT', '', '#38b6ff', nurbsPts, (ctx, p, maxT) => {
+        ctx.moveTo(p[0].x, p[0].y);
+        for (let t = 0; t <= maxT; t += 0.01) {
+            const w0 = Math.pow(1-t, 2) * p[0].w;
+            const w1 = 2 * (1-t) * t * p[1].w;
+            const w2 = t * t * p[2].w;
+            const wSum = w0 + w1 + w2;
+            const x = (w0*p[0].x + w1*p[1].x + w2*p[2].x) / wSum;
+            const y = (w0*p[0].y + w1*p[1].y + w2*p[2].y) / wSum;
+            ctx.lineTo(x, y);
+        }
+    });
+
+</script>
+</body>
+</html>
