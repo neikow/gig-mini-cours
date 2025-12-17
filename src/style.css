@@ -5,6 +5,8 @@
     --handle-surface: #ffde38;
     --bg-color: #1a1a1a;
     --slider-color: #555;
+    --canvas-max-width: 800px;
+    --canvas-max-height: 500px;
 }
 .reveal { background-color: var(--bg-color); }
 .reveal section { height: 100%; }
@@ -16,12 +18,17 @@ canvas {
 }
 /* 3D surface container styling */
 #surface3d {
-    display: flex;
-    justify-content: center;
-    align-items: center;
     width: 800px;
     height: 500px;
+    background: #222;
+    border-radius: 4px;
+    flex-shrink: 0;
 }
+
+#surface3d canvas {
+    border-radius: 4px;
+}
+
 body { margin: 0; overflow: hidden; }
 
 /* Canvas wrapper for side-by-side layout */
@@ -37,15 +44,17 @@ body { margin: 0; overflow: hidden; }
     background: #2a2a2a;
     border-radius: 4px;
     padding: 12px;
-    min-width: 180px;
-    max-width: 220px;
+    min-width: 160px;
+    max-width: 200px;
     max-height: 480px;
     overflow-y: auto;
     font-family: monospace;
     font-size: 12px;
     color: #ddd;
     box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+    flex-shrink: 0;
 }
+
 
 .points-editor h3 {
     margin: 0 0 10px 0;
